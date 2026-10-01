@@ -160,7 +160,11 @@ const editorView = (model: Model, h: HtmlBuilder<Message>): Html =>
               onClick: Message.PressedRender(),
               isDisabled:
                 model.engine._tag !== 'Ready' ||
-                model.render._tag === 'Compiling',
+                model.render._tag === 'Compiling' ||
+                Option.exists(
+                  model.maybeLive,
+                  live => live.source === model.source,
+                ),
               toView: attributes =>
                 h.button(
                   [
@@ -168,7 +172,7 @@ const editorView = (model: Model, h: HtmlBuilder<Message>): Html =>
                     h.AriaLabel('Render shader'),
                     h.Title('Render shader (⌘+Enter)'),
                     h.Class(
-                      'rounded-[3px] border border-[#3b3d43] bg-[#1c1e21] px-2 py-1 text-[#c6b8ff] transition-colors hover:bg-[#2b2b32] data-disabled:cursor-not-allowed data-disabled:opacity-40',
+                      'rounded-[3px] border border-[#655982] bg-[#292333] px-1.5 py-0.5 text-[10px] leading-4 text-[#d5c5ff] transition-colors enabled:hover:bg-[#3a304b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c6b8ff] data-disabled:cursor-not-allowed data-disabled:border-[#3b3d43] data-disabled:bg-[#1c1e21] data-disabled:opacity-40',
                     ),
                   ],
                   [h.kbd([], ['⌘+Enter'])],

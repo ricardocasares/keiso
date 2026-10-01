@@ -102,7 +102,7 @@ describe('control window', () => {
       Command.expectExact(RenderShader({ snapshot })),
       renderInitialShader,
       acknowledgeRender,
-      expect(role('button', { name: 'Render shader' })).toBeEnabled(),
+      expect(role('button', { name: 'Render shader' })).toBeDisabled(),
       expect(role('slider', { name: 'speed' })).toExist(),
       expect(text('Draft is live')).toExist(),
       keydown(role('button', { name: 'Shader examples' }), 'ArrowDown'),
@@ -132,6 +132,41 @@ describe('control window', () => {
       Mount.expectEnded(Listbox.AnchorListbox, Listbox.PortalListboxBackdrop),
       expect(role('listbox')).toBeAbsent(),
       expect(text('Draft is live')).toExist(),
+    )
+  })
+
+  test('render enables for source edits and disables after reverting or publishing them', () => {
+    const source = `${snapshot.source}\n// edited`
+    const editedSnapshot = modifyFields(snapshot, {
+      source: () => source,
+      revision: () => 2,
+    })
+    scene(
+      { update, view },
+      given(initialModel),
+      mountEditor,
+      updateEditor,
+      mountRenderer,
+      renderInitialShader,
+      acknowledgeRender,
+      expect(role('button', { name: 'Render shader' })).toBeDisabled(),
+      Subscription.emit(Message.UpdatedSource({ source })),
+      expect(role('button', { name: 'Render shader' })).toBeEnabled(),
+      Subscription.emit(Message.UpdatedSource({ source: snapshot.source })),
+      expect(role('button', { name: 'Render shader' })).toBeDisabled(),
+      Subscription.emit(Message.UpdatedSource({ source })),
+      click(role('button', { name: 'Render shader' })),
+      Command.expectExact(RenderShader({ snapshot: editedSnapshot })),
+      expect(role('button', { name: 'Render shader' })).toBeDisabled(),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: editedSnapshot,
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+      expect(role('button', { name: 'Render shader' })).toBeDisabled(),
     )
   })
 
