@@ -798,6 +798,12 @@ const startMidiLearn = (model: Model, name: string): UpdateReturn => {
   return {
     model: modifyFields(model, {
       maybeMidiLearning: () => Option.some(name),
+      maybeNotice: () => Option.none(),
+      midiBindings: bindings =>
+        bindings.filter(
+          binding =>
+            binding.name === name || Option.isSome(binding.maybeSource),
+        ),
       midi: state => (needsConnection ? MidiState.Starting() : state),
       midiSession: session => (needsConnection ? session + 1 : session),
     }),
@@ -806,7 +812,10 @@ const startMidiLearn = (model: Model, name: string): UpdateReturn => {
 
 const selectControlInput = (
   model: Model,
-  { name, input }: typeof Message.SelectedControlInput.Type,
+  {
+    name,
+    input,
+  }: Pick<typeof Message.SelectedControlInput.Type, 'name' | 'input'>,
 ): UpdateReturn => {
   if (!hasLiveControl(model, name)) {
     return { model }
@@ -814,7 +823,7 @@ const selectControlInput = (
   const selected = modifyFields(model, {
     spectrumDrag: () => SpectrumDrag.Idle(),
     maybeOscillatorPeriodEdit: () => Option.none(),
-    maybeMidiLearning: () => Option.none(),
+    maybeMidiLearning: Option.filter(learningName => learningName !== name),
     microphoneBindings: bindings =>
       input !== 'microphone'
         ? bindings.filter(binding => binding.name !== name)
@@ -1129,7 +1138,6 @@ export const update = (model: Model, message: Message) =>
             model: modifyFields(model, {
               spectrumDrag: () => SpectrumDrag.Idle(),
               maybeOscillatorPeriodEdit: () => Option.none(),
-              maybeMidiLearning: () => Option.none(),
               maybeSelectedControl: selected =>
                 Option.contains(selected, name)
                   ? Option.none()
@@ -1143,13 +1151,18 @@ export const update = (model: Model, message: Message) =>
           model: modifyFields(model, {
             spectrumDrag: () => SpectrumDrag.Idle(),
             maybeOscillatorPeriodEdit: () => Option.none(),
-            maybeMidiLearning: () => Option.none(),
             maybeSelectedControl: () => Option.none(),
           }),
           commands: [FocusControlInput({ name })],
         }),
       }),
     CompletedFocusControlInput: () => ({ model }),
+    ClickedControlMidi: ({ name }) =>
+      Option.contains(model.maybeMidiLearning, name)
+        ? selectControlInput(model, { name, input: 'manual' })
+        : model.midiBindings.some(binding => binding.name === name)
+          ? startMidiLearn(model, name)
+          : selectControlInput(model, { name, input: 'midi' }),
     SelectedControlInput: payload => selectControlInput(model, payload),
     ClickedMidiLearn: ({ name }) => startMidiLearn(model, name),
     ClickedCancelMidiLearn: () => ({
@@ -1177,6 +1190,13 @@ export const update = (model: Model, message: Message) =>
         : {
             model: modifyFields(model, {
               midi: () => MidiState.Failed({ reason }),
+              maybeMidiLearning: () => Option.none(),
+              maybeNotice: maybeNotice =>
+                Option.exists(model.maybeSelectedControl, name =>
+                  model.midiBindings.some(binding => binding.name === name),
+                )
+                  ? maybeNotice
+                  : Option.some(reason),
             }),
           },
     ReceivedMidiSignal: payload => receiveMidiSignal(model, payload),

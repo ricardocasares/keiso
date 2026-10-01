@@ -29,6 +29,7 @@ export const Message = defineMessageUnion({
   UpdatedControl: { name: Schema.String, value: Schema.Number },
   ClickedResetControls: {},
   ClickedControlInput: { name: Schema.String },
+  ClickedControlMidi: { name: Schema.String },
   ClosedControlInput: {},
   CompletedFocusControlInput: {},
   SelectedControlInput: {

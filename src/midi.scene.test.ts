@@ -165,3 +165,115 @@ test('MIDI permission failures expose a retry that starts a fresh learn session'
     Command.expectNone(),
   )
 })
+
+test('MIDI connector buttons learn, remap, disable, and transfer learning without opening an input panel', () => {
+  const twoControlSource = `${source}\n// @slider glow 0 1 .5 .01`
+  const twoControlSnapshot = modifyFields(snapshot, {
+    source: () => twoControlSource,
+    controls: () => parseControls(twoControlSource).controls,
+  })
+  scene(
+    { update, view },
+    given(
+      modifyFields(live, {
+        source: () => twoControlSource,
+        maybeLive: () => Option.some(twoControlSnapshot),
+      }),
+    ),
+    Mount.resolve(MountEditor, Message.SucceededMountEditor()),
+    Command.resolve(UpdateEditor, Message.CompletedUpdateEditor()),
+    Mount.resolve(MountRenderer, Message.SucceededMountRenderer()),
+    Command.resolve(
+      RenderShader,
+      Message.CompletedRenderShader({
+        snapshot: twoControlSnapshot,
+        diagnostics: [],
+      }),
+    ),
+    Command.resolveAll(
+      [BroadcastState, Message.CompletedBroadcastState()],
+      [ShowDiagnostics, Message.CompletedShowDiagnostics()],
+    ),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveAttr(
+      'aria-description',
+      'No MIDI assignment. Click to learn MIDI.',
+    ),
+    click(role('button', { name: 'MIDI for speed' })),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveText(''),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveAttr(
+      'aria-description',
+      'Learning MIDI. Awaiting MIDI permission… Click again to disable MIDI.',
+    ),
+    expect(text('MIDI · speed · Awaiting MIDI permission…')).toExist(),
+    expect(role('combobox', { name: 'Input source' })).not.toExist(),
+    click(role('button', { name: 'MIDI for speed' })),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveAttr(
+      'aria-description',
+      'No MIDI assignment. Click to learn MIDI.',
+    ),
+    click(role('button', { name: 'MIDI for speed' })),
+    Subscription.emit(Message.SucceededStartMidi({ sessionId: 2, inputs: [] })),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveAttr(
+      'aria-description',
+      'Learning MIDI. No MIDI inputs connected. Plug in a device to continue. Click again to disable MIDI.',
+    ),
+    expect(
+      text(
+        'MIDI · speed · No MIDI inputs connected. Plug in a device to continue.',
+      ),
+    ).toExist(),
+    Subscription.emit(
+      Message.UpdatedMidiInputs({ sessionId: 2, inputs: [input] }),
+    ),
+    Subscription.emit(
+      Message.ReceivedMidiSignal({
+        sessionId: 2,
+        signal: { source: cc, value: 127 },
+      }),
+    ),
+    acknowledge,
+    expect(role('button', { name: 'MIDI for speed' })).toHaveText('7'),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveAttr(
+      'aria-description',
+      'Keyboard · Ch 1 · CC 7. Click to remap MIDI.',
+    ),
+    expect(role('slider', { name: 'speed' })).toHaveValue('10'),
+    click(role('button', { name: 'MIDI for speed' })),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveText(''),
+    Subscription.emit(
+      Message.ReceivedMidiSignal({
+        sessionId: 2,
+        signal: { source: { ...cc, number: 8 }, value: 0 },
+      }),
+    ),
+    acknowledge,
+    expect(role('button', { name: 'MIDI for speed' })).toHaveText('8'),
+    click(role('button', { name: 'MIDI for speed' })),
+    click(role('button', { name: 'MIDI for speed' })),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveAttr(
+      'aria-description',
+      'No MIDI assignment. Click to learn MIDI.',
+    ),
+    click(role('button', { name: 'MIDI for speed' })),
+    click(role('button', { name: 'MIDI for glow' })),
+    expect(role('button', { name: 'MIDI for speed' })).toHaveAttr(
+      'aria-description',
+      'No MIDI assignment. Click to learn MIDI.',
+    ),
+    expect(role('button', { name: 'MIDI for glow' })).toHaveText(''),
+    Subscription.emit(
+      Message.SucceededStartMidi({ sessionId: 3, inputs: [input] }),
+    ),
+    Subscription.emit(
+      Message.ReceivedMidiSignal({
+        sessionId: 3,
+        signal: { source: cc, value: 127 },
+      }),
+    ),
+    acknowledge,
+    expect(role('button', { name: 'MIDI for glow' })).toHaveText('7'),
+    expect(role('slider', { name: 'glow' })).toHaveValue('1'),
+    expect(role('combobox', { name: 'Input source' })).not.toExist(),
+    Command.expectNone(),
+  )
+})

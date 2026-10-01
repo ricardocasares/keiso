@@ -177,7 +177,7 @@ test('notes use velocity and release; relearn cancellation keeps mappings, and i
   )
 })
 
-test('learning cancels when the panel closes or another control opens, but mapped input continues', () => {
+test('MIDI learning survives panel navigation and unrelated source edits', () => {
   story(
     update,
     given(learned),
@@ -185,12 +185,20 @@ test('learning cancels when the panel closes or another control opens, but mappe
     message(Message.ClickedMidiLearn({ name: 'speed' })),
     message(Message.ClosedControlInput()),
     Command.resolve(FocusControlInput, Message.CompletedFocusControlInput()),
-    model(current => expect(current.maybeMidiLearning).toEqual(Option.none())),
+    model(current =>
+      expect(current.maybeMidiLearning).toEqual(Option.some('speed')),
+    ),
     message(signal(cc, 0)),
     acknowledge,
     message(Message.ClickedMidiLearn({ name: 'speed' })),
     message(Message.ClickedControlInput({ name: 'sky' })),
-    model(current => expect(current.maybeMidiLearning).toEqual(Option.none())),
+    model(current =>
+      expect(current.maybeMidiLearning).toEqual(Option.some('speed')),
+    ),
+    message(Message.SelectedControlInput({ name: 'sky', input: 'microphone' })),
+    model(current =>
+      expect(current.maybeMidiLearning).toEqual(Option.some('speed')),
+    ),
     message(Message.SelectedControlInput({ name: 'speed', input: 'manual' })),
     message(Message.UpdatedControl({ name: 'speed', value: 4 })),
     acknowledge,
@@ -202,7 +210,7 @@ test('learning cancels when the panel closes or another control opens, but mappe
 
 test('color brightness preserves its base across reset and render, allows manual hue, and removes missing mappings', () => {
   const color = update(
-    connected,
+    learned,
     Message.SelectedControlInput({ name: 'sky', input: 'midi' }),
   ).model
   const dimmed = update(color, signal(cc, 64)).model
@@ -400,4 +408,107 @@ test('removed mappings restart access with a new session, and MIDI uses valid sl
       ),
   })
   expect(values(update(uneven, signal(cc, 127)).model)[0]).toBe(0.9)
+})
+
+test('the MIDI button learns, cancels, remaps, and disables a control without opening its input panel', () => {
+  const oscillator = update(
+    live,
+    Message.SelectedControlInput({ name: 'speed', input: 'oscillator' }),
+  ).model
+  story(
+    update,
+    given(oscillator),
+    message(Message.ClickedControlMidi({ name: 'speed' })),
+    model(current => {
+      expect(current.maybeSelectedControl).toEqual(Option.none())
+      expect(current.maybeMidiLearning).toEqual(Option.some('speed'))
+      expect(current.oscillatorBindings).toEqual([])
+      expect(current.midi._tag).toBe('Starting')
+    }),
+    message(Message.ClickedControlMidi({ name: 'speed' })),
+    model(current => {
+      expect(current.maybeMidiLearning).toEqual(Option.none())
+      expect(current.midiBindings).toEqual([])
+      expect(current.midi._tag).toBe('Idle')
+    }),
+    message(Message.ClickedControlMidi({ name: 'speed' })),
+    message(Message.SucceededStartMidi({ sessionId: 1, inputs: [input] })),
+    model(current => expect(current.midi._tag).toBe('Starting')),
+    message(Message.SucceededStartMidi({ sessionId: 2, inputs: [input] })),
+    message(signal(cc, 127, 2)),
+    acknowledge,
+    model(current => {
+      expect(current.midiBindings[0]?.maybeSource).toEqual(Option.some(cc))
+      expect(current.maybeMidiLearning).toEqual(Option.none())
+    }),
+    message(Message.ClickedControlMidi({ name: 'speed' })),
+    model(current => {
+      expect(current.maybeMidiLearning).toEqual(Option.some('speed'))
+      expect(current.midiBindings[0]?.maybeSource).toEqual(Option.some(cc))
+    }),
+    message(signal(note, 64, 2)),
+    acknowledge,
+    model(current =>
+      expect(current.midiBindings[0]?.maybeSource).toEqual(Option.some(note)),
+    ),
+    message(Message.ClickedControlMidi({ name: 'speed' })),
+    message(Message.ClickedControlMidi({ name: 'speed' })),
+    model(current => {
+      expect(current.maybeMidiLearning).toEqual(Option.none())
+      expect(current.midiBindings).toEqual([])
+      expect(current.midi._tag).toBe('Idle')
+    }),
+    message(signal(note, 127, 2)),
+    model(current => expect(values(current)[0]).toBe(3)),
+    Command.expectNone(),
+  )
+})
+
+test('moving learn to another button removes only unassigned bindings and a failed connection retries on the next tap', () => {
+  const transferred = update(
+    selected,
+    Message.ClickedControlMidi({ name: 'sky' }),
+  ).model
+  expect(transferred.midiBindings.map(binding => binding.name)).toEqual(['sky'])
+  expect(transferred.maybeMidiLearning).toEqual(Option.some('sky'))
+  expect(transferred.midiSession).toBe(1)
+  const remapping = update(
+    learned,
+    Message.ClickedControlMidi({ name: 'speed' }),
+  ).model
+  const other = update(
+    remapping,
+    Message.ClickedControlMidi({ name: 'sky' }),
+  ).model
+  expect(other.midiBindings.map(binding => binding.name)).toEqual([
+    'speed',
+    'sky',
+  ])
+  const cancelled = update(
+    other,
+    Message.ClickedControlMidi({ name: 'sky' }),
+  ).model
+  expect(cancelled.midiBindings).toEqual(learned.midiBindings)
+  expect(cancelled.midi._tag).toBe('Ready')
+  const failed = update(
+    transferred,
+    Message.FailedMidi({ sessionId: 1, reason: 'MIDI access was denied.' }),
+  ).model
+  expect(failed.maybeMidiLearning).toEqual(Option.none())
+  expect(failed.maybeNotice).toEqual(Option.some('MIDI access was denied.'))
+  const retried = update(
+    failed,
+    Message.ClickedControlMidi({ name: 'sky' }),
+  ).model
+  expect(retried.midi._tag).toBe('Starting')
+  expect(retried.midiSession).toBe(2)
+  expect(retried.maybeNotice).toEqual(Option.none())
+  expect(retried.maybeMidiLearning).toEqual(Option.some('sky'))
+  expect(
+    update(live, Message.ClickedControlMidi({ name: 'missing' })).model,
+  ).toStrictEqual(live)
+  const projection = modifyFields(learned, { mode: () => 'projection' })
+  expect(
+    update(projection, Message.ClickedControlMidi({ name: 'speed' })).model,
+  ).toStrictEqual(projection)
 })

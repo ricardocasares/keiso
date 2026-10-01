@@ -343,6 +343,19 @@ const previewView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
+const midiLearningHint = (model: Model): string =>
+  MidiState.match(model.midi, {
+    Idle: () => 'Move a knob/fader or press a key/pad.',
+    Starting: () => 'Awaiting MIDI permission…',
+    Ready: ({ inputs }) =>
+      Array.match(inputs, {
+        onEmpty: () =>
+          'No MIDI inputs connected. Plug in a device to continue.',
+        onNonEmpty: () => 'Move a knob/fader or press a key/pad.',
+      }),
+    Failed: ({ reason }) => reason,
+  })
+
 const controlView = (
   control: ShaderControl,
   model: Model,
@@ -361,6 +374,17 @@ const controlView = (
     model.midiBindings,
     binding => binding.name === control.name,
   )
+  const maybeMidiSource = Option.flatMap(
+    maybeMidi,
+    binding => binding.maybeSource,
+  )
+  const isMidiLearning = Option.contains(model.maybeMidiLearning, control.name)
+  const midiDescription = isMidiLearning
+    ? `Learning MIDI. ${midiLearningHint(model)} Click again to disable MIDI.`
+    : Option.match(maybeMidiSource, {
+        onNone: () => 'No MIDI assignment. Click to learn MIDI.',
+        onSome: source => `${midiSourceLabel(source)}. Click to remap MIDI.`,
+      })
   const isSelected = Option.contains(model.maybeSelectedControl, control.name)
   const inputLabel = Option.match(maybeBinding, {
     onNone: () =>
@@ -368,11 +392,7 @@ const controlView = (
         onNone: () =>
           Option.match(maybeMidi, {
             onNone: () => '+ Input',
-            onSome: binding =>
-              `MIDI · ${Option.match(binding.maybeSource, {
-                onNone: () => 'Unassigned',
-                onSome: midiSourceLabel,
-              })}${Option.contains(model.maybeMidiLearning, control.name) ? ' · Learning…' : ''}`,
+            onSome: () => 'Input',
           }),
         onSome: binding =>
           `Osc · ${binding.waveform} · ${binding.period}s · ${binding.phase}°`,
@@ -466,20 +486,67 @@ const controlView = (
               h.span([], [String(control.max)]),
             ],
           ),
-      h.button(
+      h.div(
+        [h.Class('mt-auto flex items-stretch gap-1')],
         [
-          h.Type('button'),
-          h.Class(
-            `mt-auto w-full truncate rounded border px-1.5 py-1 text-left text-[10px] ${isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
+          h.button(
+            [
+              h.Type('button'),
+              h.Class(
+                `min-w-0 flex-1 truncate rounded border px-1.5 py-1 text-left text-[10px] ${isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
+              ),
+              h.AriaLabel(`Input for ${control.name}`),
+              h.AriaExpanded(isSelected),
+              h.Id(`control-input-${control.name}`),
+              h.AriaControls(`control-input-editor-${control.name}`),
+              h.Title(inputLabel),
+              h.OnClick(Message.ClickedControlInput({ name: control.name })),
+            ],
+            [inputLabel],
           ),
-          h.AriaLabel(`Input for ${control.name}`),
-          h.AriaExpanded(isSelected),
-          h.Id(`control-input-${control.name}`),
-          h.AriaControls(`control-input-editor-${control.name}`),
-          h.Title(inputLabel),
-          h.OnClick(Message.ClickedControlInput({ name: control.name })),
+          h.button(
+            [
+              h.Type('button'),
+              h.Class(
+                `flex min-w-6 shrink-0 items-center justify-center rounded border px-1 font-mono text-[10px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c6b8ff] ${isMidiLearning ? 'border-[#997438] bg-[#352b1d] text-[#e9c886] hover:bg-[#443522]' : Option.isSome(maybeMidiSource) ? 'border-[#4c7962] bg-[#1c2e25] text-[#a7d8b6] hover:bg-[#263b30]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
+              ),
+              h.AriaLabel(`MIDI for ${control.name}`),
+              h.AriaDescription(midiDescription),
+              h.AriaPressed(isMidiLearning ? 'true' : 'false'),
+              h.Title(midiDescription),
+              h.OnClick(Message.ClickedControlMidi({ name: control.name })),
+            ],
+            [
+              isMidiLearning || Option.isNone(maybeMidiSource)
+                ? h.svg(
+                    [
+                      h.AriaHidden(true),
+                      h.Class(
+                        `size-3 ${isMidiLearning ? 'animate-pulse motion-reduce:animate-none' : ''}`,
+                      ),
+                      h.ViewBox('0 0 20 20'),
+                      h.Fill('none'),
+                      h.Stroke('currentColor'),
+                      h.StrokeWidth('1.5'),
+                    ],
+                    [
+                      h.path([
+                        h.StrokeLinecap('round'),
+                        h.StrokeLinejoin('round'),
+                        h.D('M7 2v4m6-4v4M5 6h10v4a5 5 0 0 1-10 0V6Zm5 9v3'),
+                      ]),
+                    ],
+                  )
+                : h.empty,
+              isMidiLearning
+                ? h.empty
+                : Option.match(maybeMidiSource, {
+                    onNone: () => h.empty,
+                    onSome: source => String(source.number),
+                  }),
+            ],
+          ),
         ],
-        [inputLabel],
       ),
     ],
   )
@@ -1128,6 +1195,21 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.div(
         [h.Class('min-h-0 overflow-auto')],
         [
+          Option.match(model.maybeMidiLearning, {
+            onNone: () => h.empty,
+            onSome: name =>
+              Option.contains(model.maybeSelectedControl, name)
+                ? h.empty
+                : h.p(
+                    [
+                      h.Role('status'),
+                      h.Class(
+                        'border-b border-line px-3 py-1.5 text-[11px] text-[#e9c886]',
+                      ),
+                    ],
+                    [`MIDI · ${name} · ${midiLearningHint(model)}`],
+                  ),
+          }),
           Option.match(model.maybeLive, {
             onNone: () =>
               h.p(
