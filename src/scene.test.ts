@@ -32,6 +32,7 @@ import {
   view,
 } from './main'
 import { Message } from './message'
+import { MountSpectrumSelection } from './spectrum'
 
 const initialModel = init({
   mode: 'control',
@@ -64,6 +65,10 @@ const renderInitialShader = Command.resolve(
 const acknowledgeRender = Command.resolveAll(
   [BroadcastState, Message.CompletedBroadcastState()],
   [ShowDiagnostics, Message.CompletedShowDiagnostics()],
+)
+const mountDefaultInput = Mount.resolve(
+  MountSpectrumSelection,
+  Message.EndedSpectrumSelection(),
 )
 const focusExampleItems = Command.resolve(
   Listbox.FocusItems,
@@ -102,13 +107,14 @@ describe('control window', () => {
       Command.expectExact(RenderShader({ snapshot })),
       renderInitialShader,
       acknowledgeRender,
+      mountDefaultInput,
       expect(role('button', { name: 'Render shader' })).toBeDisabled(),
       expect(role('slider', { name: 'speed' })).toExist(),
       expect(text('Draft is live')).toExist(),
       keydown(role('button', { name: 'Shader examples' }), 'ArrowDown'),
       focusExampleItems,
       mountExampleListbox,
-      expect(role('option', { name: /^Aurora/ })).toHaveAttr(
+      expect(role('option', { name: /^Prismatica/ })).toHaveAttr(
         'aria-selected',
         'true',
       ),
@@ -123,10 +129,7 @@ describe('control window', () => {
         Listbox.ScrollIntoView,
         Listbox.Message.CompletedScrollIntoView(),
       ),
-      expect(role('option', { name: /^Liquid chrome/ })).toHaveAttr(
-        'data-active',
-        '',
-      ),
+      expect(role('option', { name: /^Aurora/ })).toHaveAttr('data-active', ''),
       keydown(role('listbox'), 'Escape'),
       focusExampleButton,
       Mount.expectEnded(Listbox.AnchorListbox, Listbox.PortalListboxBackdrop),
@@ -149,6 +152,7 @@ describe('control window', () => {
       mountRenderer,
       renderInitialShader,
       acknowledgeRender,
+      mountDefaultInput,
       expect(role('button', { name: 'Render shader' })).toBeDisabled(),
       Subscription.emit(Message.UpdatedSource({ source })),
       expect(role('button', { name: 'Render shader' })).toBeEnabled(),
@@ -190,6 +194,7 @@ describe('control window', () => {
       mountRenderer,
       renderInitialShader,
       acknowledgeRender,
+      mountDefaultInput,
       Mount.resolve(MountEditor, Message.UpdatedSource({ source })),
       expect(text('Live shader protected · unpublished edits')).toExist(),
       click(role('button', { name: 'Render shader' })),
@@ -227,6 +232,7 @@ describe('control window', () => {
       mountRenderer,
       renderInitialShader,
       acknowledgeRender,
+      mountDefaultInput,
       click(role('button', { name: 'Projection ↗' })),
       Command.expectExact(
         OpenProjection({ sessionId: initialModel.sessionId }),

@@ -456,27 +456,33 @@ const completedRender =
               },
       })
     }
-    const maybeExampleBindings = Option.exists(
+    const maybeExample = Option.exists(
       model.maybeLive,
       live => live.source === snapshot.source,
     )
       ? Option.none()
-      : Option.fromNullishOr(
-          shaderExamples.find(example => example.source === snapshot.source)
-            ?.microphoneBindings,
+      : Array.findFirst(
+          shaderExamples,
+          example =>
+            example.source === snapshot.source &&
+            (example.microphoneBindings !== undefined ||
+              example.oscillatorBindings !== undefined),
         )
     return {
-      model: Option.match(maybeExampleBindings, {
+      model: Option.match(maybeExample, {
         onNone: () => liveModel,
-        onSome: bindings =>
+        onSome: example =>
           modifyFields(liveModel, {
-            microphoneBindings: () => bindings.slice(),
-            oscillatorBindings: Array.filter(
-              oscillator =>
-                !bindings.some(binding => binding.name === oscillator.name),
-            ),
+            microphoneBindings: () => example.microphoneBindings?.slice() ?? [],
+            oscillatorBindings: () => example.oscillatorBindings?.slice() ?? [],
             maybeSelectedControl: () =>
-              Option.map(Array.head(bindings), binding => binding.name),
+              Option.map(
+                Array.head([
+                  ...(example.microphoneBindings ?? []),
+                  ...(example.oscillatorBindings ?? []),
+                ]),
+                binding => binding.name,
+              ),
           }),
       }),
       commands: [

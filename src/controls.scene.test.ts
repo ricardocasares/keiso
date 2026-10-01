@@ -38,7 +38,7 @@ test('Slider and color inputs sync live values and Reset restores defaults', () 
     startedAt: 1000,
   }).model
   const initialModel = modifyFields(baseModel, {
-    source: source => '// @color sky #AABBCC\n' + source,
+    source: () => '// @color sky #AABBCC\n// @slider speed 0 3 0.7 0.01',
   })
   const snapshot = Snapshot.make({
     source: initialModel.source,

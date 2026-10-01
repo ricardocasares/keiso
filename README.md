@@ -11,7 +11,8 @@ Open the localhost URL in a browser with WebGPU enabled. Deployment is static: `
 
 ## Perform
 
-- Aurora starts automatically. Load Aurora, Chrome, Tunnel, or Plasma into the editor to explore the examples.
+- Prismatica starts automatically: a psychedelic kaleidoscope with rotating polygon hoops, orbiting shapes, and a breathing flower. Its 16 controls include two colors, bass/mids/highs microphone inputs, and all four oscillator waveforms. Tempo sets the built-in pulse in BPM; **Start mic** adds audio response. Open an input to tune its bands/gain or period/depth/phase, or select Manual to use its control directly.
+- Load Aurora, Liquid chrome, Neon tunnel, Acid plasma, or Afterhours from the example picker to explore other looks.
 - Edit with WGSL highlighting, autocomplete, bracket matching, indentation, search, and undo. Cmd/Ctrl+Space opens completion.
 - Diagnostics update after a short pause, including line/column locations. Click one to jump to the problem.
 - **Cmd/Ctrl+Enter** compiles and commits the draft. Draft edits and failed compilation never replace the last successful pipeline.

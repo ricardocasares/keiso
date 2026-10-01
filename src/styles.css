@@ -68,6 +68,16 @@
   border-radius: 50%;
 }
 
+.example-prismatica .example-art {
+  background:
+    repeating-radial-gradient(
+      circle,
+      #0c071a 0 2px,
+      transparent 3px 4px,
+      #0c071acc 5px 6px
+    ),
+    conic-gradient(from 30deg, #ff38b8, #4dffd5, #8861ff, #ffe17b, #ff38b8);
+}
 .example-aurora .example-art {
   background:
     radial-gradient(ellipse at 20% 20%, #19bda2, transparent 70%),

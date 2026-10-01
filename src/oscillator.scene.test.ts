@@ -32,6 +32,7 @@ import {
   view,
 } from './main'
 import { Message } from './message'
+import { MountSpectrumSelection } from './spectrum'
 
 test('a control can configure an oscillator and return to manual input', () => {
   const initialModel = init({
@@ -75,8 +76,10 @@ test('a control can configure an oscillator and return to manual input', () => {
       [BroadcastState, Message.CompletedBroadcastState()],
       [ShowDiagnostics, Message.CompletedShowDiagnostics()],
     ),
+    Mount.resolve(MountSpectrumSelection, Message.EndedSpectrumSelection()),
     expect(slider).toBeEnabled(),
     click(inputButton),
+    Mount.expectEnded(MountSpectrumSelection),
     change(source, 'oscillator'),
     Mount.expectNone(),
     expect(source).toHaveValue('oscillator'),

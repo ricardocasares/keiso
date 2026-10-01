@@ -19,6 +19,7 @@ import {
 } from './main'
 import { Message } from './message'
 import { EngineState, RenderState, Validation } from './model'
+import { subscriptions } from './subscription'
 
 const initialModel = init({
   mode: 'control',
@@ -67,6 +68,143 @@ const newestSnapshot = modifyFields(nextSnapshot, {
   source: () => plasma.source,
   controls: () => parseControls(plasma.source).controls,
   revision: () => 4,
+})
+
+describe('default example input presets', () => {
+  const example = shaderExamples[0]
+  const acknowledgeRender = Command.resolveAll(
+    [BroadcastState, Message.CompletedBroadcastState()],
+    [ShowDiagnostics, Message.CompletedShowDiagnostics()],
+  )
+
+  test('first render installs inputs without starting the microphone and rerenders retain edits', () => {
+    story(
+      update,
+      given(initialModel),
+      message(Message.SucceededMountRenderer()),
+      Command.expectExact(RenderShader({ snapshot: liveSnapshot })),
+      model(current => {
+        expect(current.exampleId).toBe('prismatica')
+        expect(current.microphoneBindings).toEqual([])
+        expect(current.oscillatorBindings).toEqual([])
+      }),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: liveSnapshot,
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+      model(current => {
+        expect(current.microphoneBindings).toEqual(example.microphoneBindings)
+        expect(current.oscillatorBindings).toEqual(example.oscillatorBindings)
+        expect(subscriptions.oscillators.modelToDependencies(current)).toEqual({
+          isActive: true,
+        })
+        expect(subscriptions.microphone.modelToDependencies(current)).toEqual({
+          maybeSession: Option.none(),
+        })
+      }),
+      message(Message.SelectedControlInput({ name: 'bass', input: 'manual' })),
+      message(Message.SelectedControlInput({ name: 'hue', input: 'manual' })),
+      message(
+        Message.UpdatedOscillatorSetting({
+          name: 'warp',
+          setting: 'period',
+          value: 12,
+        }),
+      ),
+      message(Message.PressedRender()),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: modifyFields(liveSnapshot, { revision: () => 2 }),
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+      model(current => {
+        expect(
+          current.microphoneBindings.some(binding => binding.name === 'bass'),
+        ).toBe(false)
+        expect(
+          current.oscillatorBindings.some(binding => binding.name === 'hue'),
+        ).toBe(false)
+        expect(
+          current.oscillatorBindings.find(binding => binding.name === 'warp')
+            ?.period,
+        ).toBe(12)
+      }),
+    )
+  })
+
+  test('switching examples changes inputs only on success and clears conflicting input assignments', () => {
+    const previous = modifyFields(liveSnapshot, {
+      source: () => `${liveSnapshot.source}\n// Custom inputs`,
+    })
+    const previousModel = update(
+      update(
+        modifyFields(liveModel, {
+          source: () => previous.source,
+          maybeLive: () => Option.some(previous),
+        }),
+        Message.SelectedControlInput({ name: 'bass', input: 'oscillator' }),
+      ).model,
+      Message.SelectedControlInput({ name: 'hue', input: 'microphone' }),
+    ).model
+    const fresh = modifyFields(liveSnapshot, { revision: () => 2 })
+    story(
+      update,
+      given(previousModel),
+      message(
+        Message.GotExampleListboxMessage({
+          message: Listbox.Message.SelectedItem({ item: example.id }),
+        }),
+      ),
+      Command.resolveAll(
+        [Listbox.FocusButton, Listbox.Message.CompletedFocusButton()],
+        [UpdateEditor, Message.CompletedUpdateEditor()],
+      ),
+      model(current => {
+        expect(current.microphoneBindings).toEqual(
+          previousModel.microphoneBindings,
+        )
+        expect(current.oscillatorBindings).toEqual(
+          previousModel.oscillatorBindings,
+        )
+      }),
+      message(Message.PressedRender()),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: fresh,
+          diagnostics: [invalidDiagnostic],
+        }),
+      ),
+      Command.resolve(ShowDiagnostics, Message.CompletedShowDiagnostics()),
+      model(current => {
+        expect(current.microphoneBindings).toEqual(
+          previousModel.microphoneBindings,
+        )
+        expect(current.oscillatorBindings).toEqual(
+          previousModel.oscillatorBindings,
+        )
+        expect(current.maybeLive).toEqual(Option.some(previous))
+      }),
+      message(Message.PressedRender()),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({ snapshot: fresh, diagnostics: [] }),
+      ),
+      acknowledgeRender,
+      model(current => {
+        expect(current.microphoneBindings).toEqual(example.microphoneBindings)
+        expect(current.oscillatorBindings).toEqual(example.oscillatorBindings)
+        expect(current.maybeLive).toEqual(Option.some(fresh))
+      }),
+    )
+  })
 })
 
 describe('live performance safety', () => {
@@ -248,7 +386,7 @@ describe('control reconciliation', () => {
   )
 
   test('source edits keep tuned values and changing one default only resets that control', () => {
-    const source = liveSnapshot.source.replace('0.17', '0.19')
+    const source = `${liveSnapshot.source}\n// Refined the shader`
     const preserved = modifyFields(tunedSnapshot, {
       source: () => source,
       revision: () => 2,

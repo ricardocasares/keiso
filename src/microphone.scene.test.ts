@@ -32,11 +32,14 @@ import {
 import { Message } from './message'
 import { MountSpectrumSelection } from './spectrum'
 
-const initialModel = init({
-  mode: 'control',
-  sessionId: 'microphone-scene',
-  startedAt: 1000,
-}).model
+const initialModel = modifyFields(
+  init({
+    mode: 'control',
+    sessionId: 'microphone-scene',
+    startedAt: 1000,
+  }).model,
+  { source: () => '// @slider speed 0 3 0.7 0.01' },
+)
 const snapshot = Snapshot.make({
   source: initialModel.source,
   controls: parseControls(initialModel.source).controls,
