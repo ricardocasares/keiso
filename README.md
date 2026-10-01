@@ -15,7 +15,7 @@ Open the localhost URL in a browser with WebGPU enabled. Deployment is static: `
 - Edit with WGSL highlighting, autocomplete, bracket matching, indentation, search, and undo. Cmd/Ctrl+Space opens completion.
 - Diagnostics update after a short pause, including line/column locations. Click one to jump to the problem.
 - **Cmd/Ctrl+Enter** compiles and commits the draft. Draft edits and failed compilation never replace the last successful pipeline.
-- Generated parameters operate on the **live shader**. Loading an example only changes the draft; render it when ready.
+- Generated parameters operate on the **live shader**. Loading an example only changes the draft; its controls start at their defaults when successfully rendered.
 - **Projection** opens a separate output-only window. Move it to the projector and use the browser’s fullscreen shortcut. Multiple projection windows are supported.
 
 Drafts and sessions are in memory in V1. Keep the control window open during a performance; save any code you want to keep before reloading. Projection continues its last successful shader if the control window closes.
@@ -34,7 +34,11 @@ fn fragment(uv: vec2f) -> vec4f {
 }
 ```
 
-Each annotation is `// @slider|@knob name minimum maximum initial step`. Up to 16 scalar controls are supported. Names must be distinct WGSL identifiers, values finite, the initial value within range, and step positive. Access them as `controls.name`.
+Each annotation is `// @slider|@knob name minimum maximum default step`. Up to 16 scalar controls are supported. Names must be distinct WGSL identifiers, values finite, the default value within range, and step positive. Access them as `controls.name`.
+
+Rendering an edited or pasted shader preserves live values by control name. WGSL edits, annotation order, and switching between slider and knob keep your tuning. Changing one declared default applies that value to only that control; changing its minimum, maximum, or step clamps and snaps its current value to the new valid range. New or renamed controls start at their defaults, and removed controls disappear. Failed renders keep the previous live shader and controls.
+
+**Reset** in the Controls header restores defaults from the last successfully rendered code without rendering or changing the draft. Microphone bindings remain active and can update those values again.
 
 Available uniforms:
 

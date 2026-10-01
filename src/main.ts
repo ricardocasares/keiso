@@ -6,7 +6,12 @@ import { Listbox } from '@foldkit/ui'
 
 import { bandLevel, bandsInRange, spectrumBands } from './audio'
 import { Broadcast, Snapshot } from './domain/session'
-import { Diagnostic, type ShaderControl, parseControls } from './domain/shader'
+import {
+  Diagnostic,
+  type ShaderControl,
+  parseControls,
+  reconcileControls,
+} from './domain/shader'
 import { shaderExamples } from './examples'
 import { channel, editor, errorReason, renderer } from './host'
 import { Message } from './message'
@@ -50,6 +55,8 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     sessionId: flags.sessionId,
     startedAt: flags.startedAt,
     source: shaderExamples[0].source,
+    draftGeneration: 0,
+    liveGeneration: 0,
     exampleId: shaderExamples[0].id,
     exampleListbox: Listbox.init({ id: 'shader-examples' }),
     engine: EngineState.Starting(),
@@ -230,6 +237,7 @@ const foldExampleListboxOutMessage = Listbox.OutMessage.match<
           onSome: example => ({
             model: modifyFields(model, {
               source: () => example.source,
+              draftGeneration: generation => generation + 1,
               exampleId: () => example.id,
               validation: () => Validation.Checking(),
               maybeNotice: () => Option.none(),
@@ -260,7 +268,8 @@ const notice = (model: Model, reason: string): UpdateReturn => ({
 
 const startRender = (model: Model, snapshot: Snapshot): UpdateReturn => ({
   model: modifyFields(model, {
-    render: () => RenderState.Compiling(),
+    render: () =>
+      RenderState.Compiling({ draftGeneration: model.draftGeneration }),
     maybeNotice: () => Option.none(),
   }),
   commands: [RenderShader({ snapshot })],
@@ -271,22 +280,17 @@ const renderDraft = (model: Model): UpdateReturn => {
     return { model }
   }
   const parsed = parseControls(model.source)
-  const controls = parsed.controls.map(control =>
-    Option.match(model.maybeLive, {
-      onNone: () => control,
-      onSome: live => {
-        const previous = live.controls.find(
-          candidate => candidate.name === control.name,
-        )
-        return previous && live.source === model.source
-          ? modifyFields(control, {
-              value: () =>
-                Math.min(control.max, Math.max(control.min, previous.value)),
-            })
-          : control
-      },
-    }),
-  )
+  const controls = Option.match(model.maybeLive, {
+    onNone: () => parsed.controls,
+    onSome: live =>
+      model.draftGeneration === model.liveGeneration
+        ? reconcileControls(
+            parsed.controls,
+            parseControls(live.source).controls,
+            live.controls,
+          )
+        : parsed.controls,
+  })
   const revision = Option.match(model.maybeLive, {
     onNone: () => 1,
     onSome: live => live.revision + 1,
@@ -381,6 +385,10 @@ const completedRender =
       }
     }
     const liveModel = modifyFields(completedModel, {
+      liveGeneration: () =>
+        model.render._tag === 'Compiling'
+          ? model.render.draftGeneration
+          : model.liveGeneration,
       spectrumDrag: () => SpectrumDrag.Idle(),
       maybeLive: () => Option.some(snapshot),
       microphoneBindings: Array.filter(binding =>
@@ -745,6 +753,19 @@ export const update = (model: Model, message: Message) =>
           },
     CompletedRenderShader: completedRender(model),
     UpdatedControl: updateControl(model),
+    ClickedResetControls: () =>
+      Option.match(model.maybeLive, {
+        onNone: () => ({ model }),
+        onSome: live => {
+          const defaults = parseControls(live.source).controls
+          return syncControlValues(
+            model,
+            control =>
+              defaults.find(candidate => candidate.name === control.name) ??
+              control,
+          )
+        },
+      }),
     ClickedControlInput: ({ name }) =>
       !hasLiveControl(model, name)
         ? { model }

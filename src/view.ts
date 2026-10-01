@@ -769,7 +769,38 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
     [
       h.div(
         [h.Class(panelHeadingClass)],
-        [h.h2([], ['Controls']), microphoneToolbarView(model, h)],
+        [
+          h.h2([], ['Controls']),
+          h.div(
+            [h.Class('flex items-center gap-3')],
+            [
+              microphoneToolbarView(model, h),
+              h.button(
+                [
+                  h.Type('button'),
+                  h.Class(
+                    'text-[10px] text-[#a7a0b6] hover:text-white disabled:opacity-40',
+                  ),
+                  h.AriaLabel('Reset controls to code defaults'),
+                  h.Title(
+                    'Reset to defaults in the live shader. Microphone inputs stay active.',
+                  ),
+                  h.Disabled(
+                    model.engine._tag !== 'Ready' ||
+                      model.render._tag === 'Compiling' ||
+                      Option.match(model.maybeLive, {
+                        onNone: () => true,
+                        onSome: live =>
+                          Array.isReadonlyArrayEmpty(live.controls),
+                      }),
+                  ),
+                  h.OnClick(Message.ClickedResetControls()),
+                ],
+                ['Reset'],
+              ),
+            ],
+          ),
+        ],
       ),
       h.div(
         [h.Class('min-h-0 overflow-auto')],
@@ -921,7 +952,13 @@ const helpView = (h: HtmlBuilder<Message>): Html =>
       h.p(
         [],
         [
-          'Annotations: kind, name, minimum, maximum, initial value, step. Up to 16 scalar controls. Use controls.name in your shader. Controls follow the live shader until the next successful render.',
+          'Annotations: kind, name, minimum, maximum, default value, step. Up to 16 scalar controls. Use controls.name in your shader.',
+        ],
+      ),
+      h.p(
+        [],
+        [
+          'Rendering preserves values by control name. Changing a default resets only that control; range and step changes clamp and snap its value. New or renamed controls start at their defaults. Examples start from their defaults on successful render. Reset restores the live shader’s defaults, even if the editor has unsaved changes. Microphone inputs stay active.',
         ],
       ),
       h.p(

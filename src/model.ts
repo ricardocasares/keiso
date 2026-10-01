@@ -15,7 +15,10 @@ export const Validation = defineTaggedUnion({
   Checking: {},
   Checked: { diagnostics: Schema.Array(Diagnostic) },
 })
-export const RenderState = defineTaggedUnion({ Idle: {}, Compiling: {} })
+export const RenderState = defineTaggedUnion({
+  Idle: {},
+  Compiling: { draftGeneration: Schema.Natural },
+})
 export const MicrophoneState = defineTaggedUnion({
   Idle: {},
   Starting: {},
@@ -47,6 +50,8 @@ export const Model = Schema.Struct({
   sessionId: Schema.String,
   startedAt: Schema.Number,
   source: Schema.String,
+  draftGeneration: Schema.Natural,
+  liveGeneration: Schema.Natural,
   exampleId: Schema.String,
   exampleListbox: Listbox.Model,
   engine: EngineState,

@@ -222,6 +222,185 @@ describe('live performance safety', () => {
   })
 })
 
+describe('control reconciliation', () => {
+  const tunedSnapshot = modifyFields(liveSnapshot, {
+    controls: Array.map(control =>
+      modifyFields(control, {
+        value: () => (control.name === 'speed' ? 2.4 : control.max),
+      }),
+    ),
+  })
+  const tunedModel = modifyFields(liveModel, {
+    maybeLive: () => Option.some(tunedSnapshot),
+  })
+  const acknowledgeRender = Command.resolveAll(
+    [BroadcastState, Message.CompletedBroadcastState()],
+    [ShowDiagnostics, Message.CompletedShowDiagnostics()],
+  )
+  const selectExample = message(
+    Message.GotExampleListboxMessage({
+      message: Listbox.Message.SelectedItem({ item: shaderExamples[0].id }),
+    }),
+  )
+  const acknowledgeExample = Command.resolveAll(
+    [Listbox.FocusButton, Listbox.Message.CompletedFocusButton()],
+    [UpdateEditor, Message.CompletedUpdateEditor()],
+  )
+
+  test('source edits keep tuned values and changing one default only resets that control', () => {
+    const source = liveSnapshot.source.replace('0.17', '0.19')
+    const preserved = modifyFields(tunedSnapshot, {
+      source: () => source,
+      revision: () => 2,
+    })
+    const changedDefault = modifyFields(preserved, {
+      source: () => source.replace('speed 0 3 0.7', 'speed 0 3 0.5'),
+      controls: Array.map(control =>
+        control.name === 'speed'
+          ? modifyFields(control, { value: () => 0.5 })
+          : control,
+      ),
+      revision: () => 3,
+    })
+    story(
+      update,
+      given(tunedModel),
+      message(Message.UpdatedSource({ source })),
+      message(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: preserved })),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({ snapshot: preserved, diagnostics: [] }),
+      ),
+      acknowledgeRender,
+      message(Message.UpdatedSource({ source: changedDefault.source })),
+      message(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: changedDefault })),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: changedDefault,
+          diagnostics: [invalidDiagnostic],
+        }),
+      ),
+      Command.resolve(ShowDiagnostics, Message.CompletedShowDiagnostics()),
+      model(model =>
+        expect(model.maybeLive).toStrictEqual(Option.some(preserved)),
+      ),
+      message(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: changedDefault })),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: changedDefault,
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+      model(model =>
+        expect(model.maybeLive).toStrictEqual(Option.some(changedDefault)),
+      ),
+    )
+  })
+
+  test('example reload resets after success, survives a failed render, and preserves later tuning', () => {
+    const resetSnapshot = modifyFields(liveSnapshot, { revision: () => 2 })
+    const nextDraft = `${liveSnapshot.source}\n// Continuing to edit`
+    const editedSnapshot = modifyFields(resetSnapshot, {
+      source: () => nextDraft,
+      controls: Array.map(control =>
+        control.name === 'speed'
+          ? modifyFields(control, { value: () => 2.4 })
+          : control,
+      ),
+      revision: () => 4,
+    })
+    story(
+      update,
+      given(tunedModel),
+      selectExample,
+      acknowledgeExample,
+      model(model =>
+        expect(model.maybeLive).toStrictEqual(Option.some(tunedSnapshot)),
+      ),
+      message(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: resetSnapshot })),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: resetSnapshot,
+          diagnostics: [invalidDiagnostic],
+        }),
+      ),
+      Command.resolve(ShowDiagnostics, Message.CompletedShowDiagnostics()),
+      message(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: resetSnapshot })),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: resetSnapshot,
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+      message(Message.UpdatedSource({ source: nextDraft })),
+      message(Message.UpdatedControl({ name: 'speed', value: 2.4 })),
+      Command.resolveAll(
+        [SyncControls, Message.CompletedSyncControls()],
+        [BroadcastState, Message.CompletedBroadcastState()],
+      ),
+      message(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: editedSnapshot })),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: editedSnapshot,
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+    )
+  })
+
+  test('an example selected during compilation still starts fresh on the next render', () => {
+    const pendingSnapshot = modifyFields(tunedSnapshot, {
+      source: () => `${liveSnapshot.source}\n// Edit before loading an example`,
+      revision: () => 2,
+    })
+    const resetSnapshot = modifyFields(liveSnapshot, { revision: () => 3 })
+    const pendingRender = update(
+      update(
+        tunedModel,
+        Message.UpdatedSource({ source: pendingSnapshot.source }),
+      ).model,
+      Message.PressedRender(),
+    )
+    story(
+      update,
+      given(pendingRender.model),
+      selectExample,
+      acknowledgeExample,
+      message(
+        Message.CompletedRenderShader({
+          snapshot: pendingSnapshot,
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+      message(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: resetSnapshot })),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({
+          snapshot: resetSnapshot,
+          diagnostics: [],
+        }),
+      ),
+      acknowledgeRender,
+    )
+  })
+})
+
 describe('projection synchronization', () => {
   test('GPU acquisition failure is reported again when the channel becomes ready', () => {
     const reason = 'No WebGPU adapter is available.'
@@ -304,7 +483,7 @@ describe('projection synchronization', () => {
   test('while compiling, projection keeps the newest revision even if an older one arrives later', () => {
     const projectionModel = modifyFields(liveModel, {
       mode: () => 'projection',
-      render: () => RenderState.Compiling(),
+      render: () => RenderState.Compiling({ draftGeneration: 0 }),
       maybeIncoming: () => Option.some(nextSnapshot),
     })
     story(
@@ -348,7 +527,7 @@ describe('projection synchronization', () => {
   test('a failed projection compilation still drains a newer queued snapshot', () => {
     const projectionModel = modifyFields(liveModel, {
       mode: () => 'projection',
-      render: () => RenderState.Compiling(),
+      render: () => RenderState.Compiling({ draftGeneration: 0 }),
       maybeIncoming: () => Option.some(newestSnapshot),
     })
     story(

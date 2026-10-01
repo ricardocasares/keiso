@@ -26,6 +26,7 @@ export const Message = defineMessageUnion({
     diagnostics: Schema.Array(Diagnostic),
   },
   UpdatedControl: { name: Schema.String, value: Schema.Number },
+  ClickedResetControls: {},
   ClickedControlInput: { name: Schema.String },
   ClosedControlInput: {},
   CompletedFocusControlInput: {},

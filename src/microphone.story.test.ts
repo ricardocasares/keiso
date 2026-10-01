@@ -475,7 +475,9 @@ describe('microphone control bindings', () => {
     story(
       update,
       given(
-        modifyFields(readyModel, { render: () => RenderState.Compiling() }),
+        modifyFields(readyModel, {
+          render: () => RenderState.Compiling({ draftGeneration: 0 }),
+        }),
       ),
       message(frame(0.25)),
       Command.expectNone(),

@@ -1,4 +1,5 @@
-import { Array, Schema } from 'effect'
+import { Array, BigDecimal, Schema } from 'effect'
+import { modifyFields } from 'foldkit/struct'
 
 export const ShaderControl = Schema.Struct({
   name: Schema.String,
@@ -175,6 +176,55 @@ export const parseControls = (source: string): ParsedControls =>
       },
       { controls: [], diagnostics: [] },
     )
+
+const normalizeControlValue = (
+  control: ShaderControl,
+  value: number,
+): number => {
+  const min = BigDecimal.fromNumberUnsafe(control.min)
+  const max = BigDecimal.fromNumberUnsafe(control.max)
+  const step = BigDecimal.fromNumberUnsafe(control.step)
+  const offset = BigDecimal.subtract(
+    BigDecimal.fromNumberUnsafe(
+      Math.min(control.max, Math.max(control.min, value)),
+    ),
+    min,
+  )
+  const remainder = BigDecimal.remainderUnsafe(offset, step)
+  const lower = BigDecimal.sum(min, BigDecimal.subtract(offset, remainder))
+  const upper = BigDecimal.sum(lower, step)
+  return BigDecimal.toNumberUnsafe(
+    BigDecimal.isLessThan(remainder, BigDecimal.subtract(step, remainder)) ||
+      BigDecimal.isGreaterThan(upper, max)
+      ? lower
+      : upper,
+  )
+}
+
+export const reconcileControls = (
+  controls: ReadonlyArray<ShaderControl>,
+  previousDefinitions: ReadonlyArray<ShaderControl>,
+  previousValues: ReadonlyArray<ShaderControl>,
+): ReadonlyArray<ShaderControl> =>
+  controls.map(control => {
+    const definition = previousDefinitions.find(
+      previous => previous.name === control.name,
+    )
+    const previous = previousValues.find(
+      previous => previous.name === control.name,
+    )
+    if (!definition || !previous || definition.value !== control.value) {
+      return control
+    }
+    return modifyFields(control, {
+      value: () =>
+        definition.min === control.min &&
+        definition.max === control.max &&
+        definition.step === control.step
+          ? previous.value
+          : normalizeControlValue(control, previous.value),
+    })
+  })
 
 export const buildShader = (source: string) => {
   const parsed = parseControls(source)
