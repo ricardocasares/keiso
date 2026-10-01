@@ -14,7 +14,7 @@ Open the localhost URL in a browser with WebGPU enabled. Deployment is static: `
 - Aurora starts automatically. Load Aurora, Chrome, Tunnel, or Plasma into the editor to explore the examples.
 - Edit with WGSL highlighting, autocomplete, bracket matching, indentation, search, and undo. Cmd/Ctrl+Space opens completion.
 - Diagnostics update after a short pause, including line/column locations. Click one to jump to the problem.
-- **Cmd/Ctrl+Enter** or **Render shader** compiles and commits the draft. Draft edits and failed compilation never replace the last successful pipeline.
+- **Cmd/Ctrl+Enter** compiles and commits the draft. Draft edits and failed compilation never replace the last successful pipeline.
 - Generated parameters operate on the **live shader**. Loading an example only changes the draft; render it when ready.
 - **Projection** opens a separate output-only window. Move it to the projector and use the browser’s fullscreen shortcut. Multiple projection windows are supported.
 

@@ -152,25 +152,7 @@ const editorView = (model: Model, h: HtmlBuilder<Message>): Html =>
               'WGSL',
             ],
           ),
-          h.div(
-            [h.Class('flex items-center gap-2.5')],
-            [
-              h.kbd(
-                [h.Class('text-[#85838e] max-[1000px]:hidden')],
-                ['⌘ / Ctrl ↵'],
-              ),
-              button(
-                model.render._tag === 'Compiling'
-                  ? 'Compiling…'
-                  : 'Render shader',
-                Message.PressedRender(),
-                `${toolbarButtonClass} border-accent bg-accent text-[#191524] hover:bg-[#d1c1ff]`,
-                model.engine._tag !== 'Ready' ||
-                  model.render._tag === 'Compiling',
-                h,
-              ),
-            ],
-          ),
+          h.kbd([h.Class('text-[#85838e]')], ['⌘+Enter']),
         ],
       ),
     ],

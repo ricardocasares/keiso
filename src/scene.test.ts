@@ -2,6 +2,7 @@ import { Array, Option } from 'effect'
 import {
   Command,
   Mount,
+  Subscription,
   click,
   expect,
   given,
@@ -63,14 +64,15 @@ const acknowledgeRender = Command.resolveAll(
 )
 
 describe('control window', () => {
-  test('starts with an editor, output, example catalog, and disabled render until WebGPU is ready', () => {
+  test('starts with an editor, output, examples, and a render shortcut', () => {
     scene(
       { update, view },
       given(initialModel),
       expect(role('heading', { name: 'codegl' })).toExist(),
       expect(role('region', { name: 'Shader editor' })).toExist(),
       expect(role('region', { name: 'Live output' })).toExist(),
-      expect(role('button', { name: 'Render shader' })).toBeDisabled(),
+      expect(text('⌘+Enter')).toExist(),
+      expect(role('button', { name: 'Render shader' })).toBeAbsent(),
       expect(role('button', { name: 'Projection ↗' })).toBeDisabled(),
       expect(text('Aurora')).toExist(),
       expect(text('Liquid chrome')).toExist(),
@@ -80,10 +82,9 @@ describe('control window', () => {
       mountEditor,
       updateEditor,
       mountRenderer,
-      expect(role('button', { name: 'Compiling…' })).toBeDisabled(),
+      Command.expectExact(RenderShader({ snapshot })),
       renderInitialShader,
       acknowledgeRender,
-      expect(role('button', { name: 'Render shader' })).not.toBeDisabled(),
       expect(role('slider', { name: 'speed' })).toExist(),
       expect(text('Draft is live')).toExist(),
     )
@@ -111,8 +112,9 @@ describe('control window', () => {
       acknowledgeRender,
       Mount.resolve(MountEditor, Message.UpdatedSource({ source })),
       expect(text('Live shader protected · unpublished edits')).toExist(),
-      click(role('button', { name: 'Render shader' })),
-      expect(role('button', { name: 'Compiling…' })).toBeDisabled(),
+      Subscription.emit(Message.PressedRender()),
+      Command.expectExact(RenderShader({ snapshot: rejectedSnapshot })),
+      expect(role('slider', { name: 'speed' })).toBeDisabled(),
       Command.resolve(
         RenderShader,
         Message.CompletedRenderShader({
@@ -159,11 +161,11 @@ describe('control window', () => {
       ),
       updateEditor,
       expect(text('Live shader protected · unpublished edits')).toExist(),
-      expect(role('button', { name: 'Render shader' })).not.toBeDisabled(),
+      Command.expectNone(),
     )
   })
 
-  test('GPU failure is visible and keeps render and projection disabled', () => {
+  test('GPU failure is visible, ignores the render shortcut, and keeps projection disabled', () => {
     scene(
       { update, view },
       given(initialModel),
@@ -178,7 +180,8 @@ describe('control window', () => {
       expect(role('alert')).toExist(),
       expect(text('WebGPU unavailable')).toExist(),
       expect(text('No WebGPU adapter is available.')).toExist(),
-      expect(role('button', { name: 'Render shader' })).toBeDisabled(),
+      Subscription.emit(Message.PressedRender()),
+      Command.expectNone(),
       expect(role('button', { name: 'Projection ↗' })).toBeDisabled(),
     )
   })
