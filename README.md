@@ -41,15 +41,19 @@ Rendering an edited or pasted shader preserves live values by control name. WGSL
 
 Color controls can use microphone input to vary brightness from black to the selected color, preserving its hue. Frequency bands and gain work the same way as sliders. Stop the microphone to pick a new base color.
 
-**Reset** in the Controls header restores defaults from the last successfully rendered code without rendering or changing the draft. Microphone bindings remain active and can update those values again.
+Select **+ Input → Oscillator** to animate a control automatically. Choose sine, triangle, sawtooth, or square, then set period (0.1–120 seconds), depth (0–100%), and phase (0–360°). Defaults are sine, 4 seconds, 100% depth, and 0° phase.
+
+At full depth, sliders sweep their declared range and colors pulse from black to their chosen color. Lower depth narrows sliders around their range midpoint and reduces how far colors dim. All oscillators use the session clock: equal periods and phases stay together even when attached at different times; a 180° phase offset puts sine waves opposite each other. Select Manual to stop an oscillator and edit the control again. Keep the controller visible for smooth modulation: browsers can throttle its timer when the tab is hidden, reducing projection updates.
+
+**Reset** in the Controls header restores defaults from the last successfully rendered code without rendering or changing the draft. Microphone and oscillator bindings remain active and can update those values again.
 
 Available uniforms:
 
-| Value                | Type    | Meaning                                                   |
-| -------------------- | ------- | --------------------------------------------------------- |
-| `globals.time`       | `f32`   | Seconds since this session started; shared across windows |
-| `globals.resolution` | `vec2f` | Current output width and height in physical pixels        |
-| `controls.name`      | `f32`   | Value of an annotated parameter                           |
+| Value                | Type            | Meaning                                                   |
+| -------------------- | --------------- | --------------------------------------------------------- |
+| `globals.time`       | `f32`           | Seconds since this session started; shared across windows |
+| `globals.resolution` | `vec2f`         | Current output width and height in physical pixels        |
+| `controls.name`      | `f32` / `vec3f` | Slider value / normalized RGB color                       |
 
 Use `globals.resolution.x / globals.resolution.y` to correct aspect ratio. Custom functions and WGSL expressions work normally. The V1 host provides two uniform buffers; textures, additional bind groups, compute passes, audio, and MIDI are outside its shader contract.
 

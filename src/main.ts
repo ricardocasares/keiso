@@ -2,9 +2,10 @@ import { Array, Clock, Effect, Option, Schema } from 'effect'
 import { Command, Dom, type Runtime, Update } from 'foldkit'
 import { modifyFields } from 'foldkit/struct'
 
-import { Listbox } from '@foldkit/ui'
+import { Listbox, RadioGroup } from '@foldkit/ui'
 
 import { bandLevel, bandsInRange, spectrumBands } from './audio'
+import { type OscillatorBinding, oscillatorLevel } from './domain/oscillator'
 import { Broadcast, Snapshot } from './domain/session'
 import {
   Diagnostic,
@@ -25,7 +26,7 @@ import {
   SpectrumDrag,
   Validation,
 } from './model'
-import { ExampleListbox } from './view'
+import { ExampleListbox, WaveformRadioGroup } from './view'
 
 export { Message } from './message'
 export { Model } from './model'
@@ -70,6 +71,9 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     microphone: MicrophoneState.Idle(),
     microphoneSession: 0,
     microphoneBindings: [],
+    oscillatorBindings: [],
+    waveformRadioGroup: RadioGroup.init({ id: 'oscillator-waveform' }),
+    maybeOscillatorPeriodEdit: Option.none(),
     maybeSelectedControl: Option.none(),
     spectrum: [],
     spectrumDrag: SpectrumDrag.Idle(),
@@ -384,6 +388,33 @@ const completedRender =
               ],
       }
     }
+    const definitions = parseControls(snapshot.source).controls
+    const previousDefinitions = Option.match(model.maybeLive, {
+      onNone: () => [],
+      onSome: live => parseControls(live.source).controls,
+    })
+    const isLiveBinding = (binding: { name: string }) =>
+      snapshot.controls.some(control => control.name === binding.name)
+    const reconciledColor = (
+      binding: Pick<MicrophoneBinding, 'name' | 'maybeColor'>,
+    ): Option.Option<number> => {
+      const color = snapshot.controls.find(
+        control => control.name === binding.name && control.kind === 'color',
+      )
+      const previous = previousDefinitions.find(
+        control => control.name === binding.name,
+      )
+      const definition = definitions.find(
+        control => control.name === binding.name,
+      )
+      return !color
+        ? Option.none()
+        : previous?.kind === 'color' &&
+            previous.value === definition?.value &&
+            Option.isSome(binding.maybeColor)
+          ? binding.maybeColor
+          : Option.some(color.value)
+    }
     const liveModel = modifyFields(completedModel, {
       liveGeneration: () =>
         model.render._tag === 'Compiling'
@@ -392,36 +423,17 @@ const completedRender =
       spectrumDrag: () => SpectrumDrag.Idle(),
       maybeLive: () => Option.some(snapshot),
       microphoneBindings: bindings =>
-        bindings
-          .filter(binding =>
-            snapshot.controls.some(control => control.name === binding.name),
-          )
-          .map(binding => {
-            const color = snapshot.controls.find(
-              control =>
-                control.name === binding.name && control.kind === 'color',
-            )
-            const previous = Option.flatMap(model.maybeLive, live =>
-              Array.findFirst(
-                parseControls(live.source).controls,
-                control => control.name === binding.name,
-              ),
-            )
-            const definition = parseControls(snapshot.source).controls.find(
-              control => control.name === binding.name,
-            )
-            return modifyFields(binding, {
-              maybeColor: () =>
-                !color
-                  ? Option.none()
-                  : Option.isSome(previous) &&
-                      previous.value.kind === 'color' &&
-                      previous.value.value === definition?.value &&
-                      Option.isSome(binding.maybeColor)
-                    ? binding.maybeColor
-                    : Option.some(color.value),
-            })
+        bindings.filter(isLiveBinding).map(binding =>
+          modifyFields(binding, {
+            maybeColor: () => reconciledColor(binding),
           }),
+        ),
+      oscillatorBindings: bindings =>
+        bindings.filter(isLiveBinding).map(binding =>
+          modifyFields(binding, {
+            maybeColor: () => reconciledColor(binding),
+          }),
+        ),
       maybeSelectedControl: Option.filter(name =>
         snapshot.controls.some(control => control.name === name),
       ),
@@ -459,6 +471,10 @@ const completedRender =
         onSome: bindings =>
           modifyFields(liveModel, {
             microphoneBindings: () => bindings.slice(),
+            oscillatorBindings: Array.filter(
+              oscillator =>
+                !bindings.some(binding => binding.name === oscillator.name),
+            ),
             maybeSelectedControl: () =>
               Option.map(Array.head(bindings), binding => binding.name),
           }),
@@ -512,21 +528,29 @@ const syncControlValues = (
     onNone: () => ({ model }),
     onSome: live => {
       const controls = live.controls.map(toControl)
+      const updatedColor = (
+        binding: Pick<MicrophoneBinding, 'name' | 'maybeColor'>,
+      ): Option.Option<number> => {
+        const color = controls.find(
+          control => control.name === binding.name && control.kind === 'color',
+        )
+        return color &&
+          color !== live.controls.find(control => control.name === binding.name)
+          ? Option.some(color.value)
+          : binding.maybeColor
+      }
       const nextModel = updatesColor
         ? modifyFields(model, {
-            microphoneBindings: Array.map(binding => {
-              const color = controls.find(
-                control =>
-                  control.name === binding.name && control.kind === 'color',
-              )
-              return color &&
-                color !==
-                  live.controls.find(control => control.name === binding.name)
-                ? modifyFields(binding, {
-                    maybeColor: () => Option.some(color.value),
-                  })
-                : binding
-            }),
+            microphoneBindings: Array.map(binding =>
+              modifyFields(binding, {
+                maybeColor: () => updatedColor(binding),
+              }),
+            ),
+            oscillatorBindings: Array.map(binding =>
+              modifyFields(binding, {
+                maybeColor: () => updatedColor(binding),
+              }),
+            ),
           })
         : model
       if (
@@ -557,6 +581,7 @@ const updateControl =
   (model: Model) =>
   ({ name, value }: typeof Message.UpdatedControl.Type): UpdateReturn =>
     !Number.isFinite(value) ||
+    model.oscillatorBindings.some(binding => binding.name === name) ||
     (model.microphone._tag === 'Ready' &&
       model.microphoneBindings.some(binding => binding.name === name))
       ? { model }
@@ -580,6 +605,42 @@ const hasLiveControl = (model: Model, name: string): boolean =>
   Option.exists(model.maybeLive, live =>
     live.controls.some(control => control.name === name),
   )
+
+const selectedColor = (model: Model, name: string): Option.Option<number> =>
+  Option.orElse(
+    Option.flatMap(
+      Array.findFirst(
+        [...model.microphoneBindings, ...model.oscillatorBindings],
+        binding => binding.name === name,
+      ),
+      binding => binding.maybeColor,
+    ),
+    () =>
+      Option.flatMap(model.maybeLive, live =>
+        Option.map(
+          Array.findFirst(
+            live.controls,
+            control => control.name === name && control.kind === 'color',
+          ),
+          control => control.value,
+        ),
+      ),
+  )
+
+const updateOscillator = (
+  model: Model,
+  name: string,
+  transform: (binding: OscillatorBinding) => OscillatorBinding,
+): UpdateReturn =>
+  !hasLiveControl(model, name)
+    ? { model }
+    : {
+        model: modifyFields(model, {
+          oscillatorBindings: Array.map(binding =>
+            binding.name === name ? transform(binding) : binding,
+          ),
+        }),
+      }
 
 const updateBinding = (
   model: Model,
@@ -680,6 +741,63 @@ const microphoneIsCurrent = (model: Model, sessionId: number): boolean =>
   model.microphoneSession === sessionId &&
   (model.microphone._tag === 'Starting' || model.microphone._tag === 'Ready')
 
+const controlAtLevel = (
+  control: ShaderControl,
+  level: number,
+  maybeColor: Option.Option<number>,
+): ShaderControl => {
+  if (control.kind === 'color') {
+    const color = Option.getOrElse(maybeColor, () => control.value)
+    return modifyFields(control, {
+      value: () =>
+        (Math.round(((color >> 16) & 255) * level) << 16) |
+        (Math.round(((color >> 8) & 255) * level) << 8) |
+        Math.round((color & 255) * level),
+    })
+  }
+  const value = control.min + level * (control.max - control.min)
+  return modifyFields(control, {
+    value: () =>
+      Math.min(
+        control.max,
+        Math.max(
+          control.min,
+          Number(
+            (
+              control.min +
+              Math.round((value - control.min) / control.step) * control.step
+            ).toPrecision(6),
+          ),
+        ),
+      ),
+  })
+}
+
+const tickOscillators = (model: Model, now: number): UpdateReturn => {
+  if (!Number.isFinite(now) || now < model.startedAt) {
+    return { model }
+  }
+  return syncControlValues(
+    model,
+    control => {
+      const binding = model.oscillatorBindings.find(
+        binding => binding.name === control.name,
+      )
+      if (!binding) {
+        return control
+      }
+      const wave = oscillatorLevel(binding, (now - model.startedAt) / 1000)
+      const depth = binding.depth / 100
+      const level =
+        control.kind === 'color'
+          ? 1 - depth + depth * wave
+          : 0.5 + depth * (wave - 0.5)
+      return controlAtLevel(control, level, binding.maybeColor)
+    },
+    false,
+  )
+}
+
 const updateMicrophoneSpectrum = (
   model: Model,
   { sessionId, spectrum }: typeof Message.UpdatedMicrophoneSpectrum.Type,
@@ -703,32 +821,7 @@ const updateMicrophoneSpectrum = (
         return control
       }
       const level = bandLevel(spectrum, binding.bands, binding.gain)
-      if (control.kind === 'color') {
-        const color = Option.getOrElse(binding.maybeColor, () => control.value)
-        return modifyFields(control, {
-          value: () =>
-            (Math.round(((color >> 16) & 255) * level) << 16) |
-            (Math.round(((color >> 8) & 255) * level) << 8) |
-            Math.round((color & 255) * level),
-        })
-      }
-      const value = control.min + level * (control.max - control.min)
-      return modifyFields(control, {
-        value: () =>
-          Math.min(
-            control.max,
-            Math.max(
-              control.min,
-              Number(
-                (
-                  control.min +
-                  Math.round((value - control.min) / control.step) *
-                    control.step
-                ).toPrecision(6),
-              ),
-            ),
-          ),
-      })
+      return controlAtLevel(control, level, binding.maybeColor)
     },
     false,
   )
@@ -838,6 +931,7 @@ export const update = (model: Model, message: Message) =>
         : {
             model: modifyFields(model, {
               spectrumDrag: () => SpectrumDrag.Idle(),
+              maybeOscillatorPeriodEdit: () => Option.none(),
               maybeSelectedControl: selected =>
                 Option.contains(selected, name)
                   ? Option.none()
@@ -850,6 +944,7 @@ export const update = (model: Model, message: Message) =>
         onSome: name => ({
           model: modifyFields(model, {
             spectrumDrag: () => SpectrumDrag.Idle(),
+            maybeOscillatorPeriodEdit: () => Option.none(),
             maybeSelectedControl: () => Option.none(),
           }),
           commands: [FocusControlInput({ name })],
@@ -862,8 +957,9 @@ export const update = (model: Model, message: Message) =>
         : {
             model: modifyFields(model, {
               spectrumDrag: () => SpectrumDrag.Idle(),
+              maybeOscillatorPeriodEdit: () => Option.none(),
               microphoneBindings: bindings =>
-                input === 'manual'
+                input !== 'microphone'
                   ? bindings.filter(binding => binding.name !== name)
                   : bindings.some(binding => binding.name === name)
                     ? bindings
@@ -871,20 +967,86 @@ export const update = (model: Model, message: Message) =>
                         name,
                         bands: bandsInRange(20, 250),
                         gain: 1,
-                        maybeColor: Option.flatMap(model.maybeLive, live =>
-                          Option.map(
-                            Array.findFirst(
-                              live.controls,
-                              control =>
-                                control.name === name &&
-                                control.kind === 'color',
-                            ),
-                            control => control.value,
-                          ),
-                        ),
+                        maybeColor: selectedColor(model, name),
+                      }),
+              oscillatorBindings: bindings =>
+                input !== 'oscillator'
+                  ? bindings.filter(binding => binding.name !== name)
+                  : bindings.some(binding => binding.name === name)
+                    ? bindings
+                    : bindings.concat({
+                        name,
+                        waveform: 'sine',
+                        period: 4,
+                        depth: 100,
+                        phase: 0,
+                        maybeColor: selectedColor(model, name),
                       }),
             }),
           },
+    GotWaveformRadioGroupMessage: ({ controlId: name, message }) =>
+      Update.foldChild({
+        update: WaveformRadioGroup.update,
+        read: (model: Model) =>
+          model.oscillatorBindings.some(binding => binding.name === name)
+            ? Option.some(model.waveformRadioGroup)
+            : Option.none(),
+        write: (model, waveformRadioGroup) =>
+          modifyFields(model, { waveformRadioGroup: () => waveformRadioGroup }),
+        toParentMessage: message =>
+          Message.GotWaveformRadioGroupMessage({ controlId: name, message }),
+        foldOutMessage: RadioGroup.OutMessage.match<
+          Update.Step<Model, Message>,
+          RadioGroup.OutMessage<OscillatorBinding['waveform']>
+        >({
+          Selected:
+            ({ value }) =>
+            model =>
+              updateOscillator(model, name, binding =>
+                modifyFields(binding, { waveform: () => value }),
+              ),
+        }),
+      })(model, message),
+    UpdatedOscillatorPeriod: ({ name, value }) => {
+      if (
+        !hasLiveControl(model, name) ||
+        !model.oscillatorBindings.some(binding => binding.name === name)
+      ) {
+        return { model }
+      }
+      const edited = modifyFields(model, {
+        maybeOscillatorPeriodEdit: () => Option.some({ name, value }),
+      })
+      const period = Number(value)
+      return value.trim() === '' ||
+        !Number.isFinite(period) ||
+        period < 0.1 ||
+        period > 120
+        ? { model: edited }
+        : updateOscillator(edited, name, binding =>
+            modifyFields(binding, { period: () => period }),
+          )
+    },
+    BlurredOscillatorPeriod: ({ name }) => ({
+      model: modifyFields(model, {
+        maybeOscillatorPeriodEdit: Option.filter(edit => edit.name !== name),
+      }),
+    }),
+    UpdatedOscillatorSetting: ({ name, setting, value }) => {
+      const minimum = setting === 'period' ? 0.1 : 0
+      const maximum =
+        setting === 'period' ? 120 : setting === 'depth' ? 100 : 360
+      return !Number.isFinite(value) || value < minimum || value > maximum
+        ? { model }
+        : updateOscillator(model, name, binding =>
+            modifyFields(binding, {
+              period: period => (setting === 'period' ? value : period),
+              depth: depth => (setting === 'depth' ? value : depth),
+              phase: phase => (setting === 'phase' ? value : phase),
+            }),
+          )
+    },
+    TickedOscillators: ({ now }) => tickOscillators(model, now),
     SelectedControlBand: ({ name, low, high }) =>
       selectControlBand(model, name, low, high),
     ClickedSpectrumBand: ({ name, index }) =>

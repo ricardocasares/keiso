@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { defineMessageUnion } from 'foldkit/message'
 
-import { Listbox } from '@foldkit/ui'
+import { Listbox, RadioGroup } from '@foldkit/ui'
 
 import { Broadcast, Snapshot } from './domain/session'
 import { Diagnostic } from './domain/shader'
@@ -32,8 +32,20 @@ export const Message = defineMessageUnion({
   CompletedFocusControlInput: {},
   SelectedControlInput: {
     name: Schema.String,
-    input: Schema.Literals(['manual', 'microphone']),
+    input: Schema.Literals(['manual', 'microphone', 'oscillator']),
   },
+  GotWaveformRadioGroupMessage: {
+    controlId: Schema.String,
+    message: RadioGroup.Message,
+  },
+  UpdatedOscillatorPeriod: { name: Schema.String, value: Schema.String },
+  BlurredOscillatorPeriod: { name: Schema.String },
+  UpdatedOscillatorSetting: {
+    name: Schema.String,
+    setting: Schema.Literals(['period', 'depth', 'phase']),
+    value: Schema.Number,
+  },
+  TickedOscillators: { now: Schema.Number },
   SelectedControlBand: {
     name: Schema.String,
     low: Schema.Number,

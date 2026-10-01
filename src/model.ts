@@ -1,8 +1,9 @@
 import { Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
-import { Listbox } from '@foldkit/ui'
+import { Listbox, RadioGroup } from '@foldkit/ui'
 
+import { OscillatorBinding } from './domain/oscillator'
 import { Snapshot } from './domain/session'
 import { Diagnostic } from './domain/shader'
 
@@ -32,6 +33,7 @@ export const MicrophoneBinding = Schema.Struct({
   maybeColor: Schema.Option(Schema.Number),
 })
 export type MicrophoneBinding = typeof MicrophoneBinding.Type
+export { OscillatorBinding } from './domain/oscillator'
 export const SpectrumDrag = defineTaggedUnion({
   Idle: {},
   Dragging: {
@@ -66,6 +68,11 @@ export const Model = Schema.Struct({
   microphone: MicrophoneState,
   microphoneSession: Schema.Natural,
   microphoneBindings: Schema.Array(MicrophoneBinding),
+  oscillatorBindings: Schema.Array(OscillatorBinding),
+  waveformRadioGroup: RadioGroup.Model,
+  maybeOscillatorPeriodEdit: Schema.Option(
+    Schema.Struct({ name: Schema.String, value: Schema.String }),
+  ),
   maybeSelectedControl: Schema.Option(Schema.String),
   spectrum: Schema.Array(Schema.Number),
   spectrumDrag: SpectrumDrag,

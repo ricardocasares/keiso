@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, Stream } from 'effect'
+import { Array, Clock, Effect, Option, Schema, Stream } from 'effect'
 import { Subscription } from 'foldkit'
 
 import { streamMicrophone } from './audio'
@@ -7,6 +7,27 @@ import { Message } from './message'
 import type { Model } from './model'
 
 export const subscriptions = Subscription.make<Model, Message>()(entry => ({
+  oscillators: entry(
+    { isActive: Schema.Boolean },
+    {
+      modelToDependencies: model => ({
+        isActive:
+          model.mode === 'control' &&
+          model.engine._tag === 'Ready' &&
+          model.render._tag !== 'Compiling' &&
+          Option.isSome(model.maybeLive) &&
+          Array.isReadonlyArrayNonEmpty(model.oscillatorBindings),
+      }),
+      dependenciesToStream: ({ isActive }) =>
+        isActive
+          ? // ponytail: background tabs throttle this timer; sample in the projection renderer if background performance is needed.
+            Stream.tick('33 millis').pipe(
+              Stream.mapEffect(() => Clock.currentTimeMillis),
+              Stream.map(now => Message.TickedOscillators({ now })),
+            )
+          : Stream.empty,
+    },
+  ),
   microphone: entry(
     { maybeSession: Schema.Option(Schema.Number) },
     {

@@ -1,9 +1,10 @@
 import { Array, Option } from 'effect'
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
-import { Button, Listbox } from '@foldkit/ui'
+import { Button, Listbox, RadioGroup } from '@foldkit/ui'
 
 import { bandsInRange, spectrumBands } from './audio'
+import { Waveform } from './domain/oscillator'
 import type { Diagnostic, ShaderControl } from './domain/shader'
 import { type ShaderExample, shaderExamples } from './examples'
 import { MountEditor, MountRenderer } from './host'
@@ -13,11 +14,13 @@ import {
   type MicrophoneBinding,
   MicrophoneState,
   type Model,
+  type OscillatorBinding,
   Validation,
 } from './model'
 import { MountSpectrumSelection } from './spectrum'
 
 export const ExampleListbox = Listbox.create<ShaderExample>()
+export const WaveformRadioGroup = RadioGroup.create<Waveform>()
 
 const panelHeadingClass =
   'flex h-8 shrink-0 items-center justify-between gap-3 border-b border-line bg-toolbar px-3 text-[#c9cbd1]'
@@ -348,9 +351,18 @@ const controlView = (
     model.microphoneBindings,
     binding => binding.name === control.name,
   )
+  const maybeOscillator = Array.findFirst(
+    model.oscillatorBindings,
+    binding => binding.name === control.name,
+  )
   const isSelected = Option.contains(model.maybeSelectedControl, control.name)
   const inputLabel = Option.match(maybeBinding, {
-    onNone: () => '+ Input',
+    onNone: () =>
+      Option.match(maybeOscillator, {
+        onNone: () => '+ Input',
+        onSome: binding =>
+          `Osc · ${binding.waveform} · ${binding.period}s · ${binding.phase}°`,
+      }),
     onSome: binding =>
       `Mic · ${selectedBandsLabel(binding)} · ${MicrophoneState.match(
         model.microphone,
@@ -411,6 +423,7 @@ const controlView = (
         h.Disabled(
           model.render._tag === 'Compiling' ||
             model.engine._tag !== 'Ready' ||
+            Option.isSome(maybeOscillator) ||
             (Option.isSome(maybeBinding) && model.microphone._tag === 'Ready'),
         ),
         h.Style({ '--range': `${proportion * 100}%` }),
@@ -689,6 +702,160 @@ const microphoneView = (
     ],
   )
 
+const oscillatorView = (
+  binding: OscillatorBinding,
+  model: Model,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const waveformPaths: Record<Waveform, string> = {
+    sine: 'M2 8 C5 -1 9 -1 12 8 S19 17 22 8',
+    triangle: 'M2 12 L7 3 L17 13 L22 4',
+    sawtooth: 'M2 12 L11 3 V13 L22 3',
+    square: 'M2 12 V3 H12 V13 H22 V3',
+  }
+  const settings: ReadonlyArray<{
+    setting: 'depth' | 'phase'
+    label: string
+    unit: string
+    min: number
+    max: number
+    step: number
+  }> = [
+    { setting: 'depth', label: 'Depth', unit: '%', min: 0, max: 100, step: 1 },
+    { setting: 'phase', label: 'Phase', unit: '°', min: 0, max: 360, step: 1 },
+  ]
+  return h.div(
+    [
+      h.Class(
+        'mt-2 grid grid-cols-2 gap-2 min-[1000px]:grid-cols-[auto_repeat(3,minmax(0,1fr))]',
+      ),
+    ],
+    [
+      h.div(
+        [h.Class('flex min-w-0 flex-col gap-1 text-[10px] text-[#a9a2b3]')],
+        [
+          h.span([], ['Waveform']),
+          h.submodel({
+            slotId: 'oscillator-waveform',
+            model: model.waveformRadioGroup,
+            view: WaveformRadioGroup.view,
+            viewInputs: {
+              options: Waveform.literals,
+              selectedValue: Option.some(binding.waveform),
+              ariaLabel: 'Oscillator waveform',
+              orientation: 'Horizontal',
+              toView: ({ group, options }) =>
+                h.div(
+                  [...group, h.Class('flex gap-1')],
+                  options.map(option =>
+                    h.keyed('button')(
+                      option.value,
+                      [
+                        ...option.option,
+                        h.Title(option.value),
+                        h.Class(
+                          `flex h-7 w-8 shrink-0 items-center justify-center rounded border ${option.isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-[#3e3649] bg-[#211c29] text-[#a9a2b3] hover:text-[#dcccfb]'}`,
+                        ),
+                      ],
+                      [
+                        h.span(
+                          [...option.label, h.Class('sr-only')],
+                          [option.value],
+                        ),
+                        h.svg(
+                          [
+                            h.ViewBox('0 0 24 16'),
+                            h.Class('h-4 w-6'),
+                            h.AriaHidden(true),
+                            h.Fill('none'),
+                          ],
+                          [
+                            h.path([
+                              h.D(waveformPaths[option.value]),
+                              h.Stroke('currentColor'),
+                              h.StrokeWidth('1.5'),
+                            ]),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            },
+            toParentMessage: message =>
+              Message.GotWaveformRadioGroupMessage({
+                controlId: binding.name,
+                message,
+              }),
+          }),
+        ],
+      ),
+      h.label(
+        [h.Class('flex min-w-0 flex-col gap-1 text-[10px] text-[#a9a2b3]')],
+        [
+          h.span([], ['Period (s)']),
+          h.input([
+            h.Type('number'),
+            h.AriaLabel('Oscillator period'),
+            h.Class(
+              'h-7 w-full min-w-0 rounded border border-[#3e3649] bg-[#211c29] px-2 text-[11px] text-[#d3c8e5]',
+            ),
+            h.Min('0.1'),
+            h.Max('120'),
+            h.Step('0.1'),
+            h.Value(
+              Option.match(model.maybeOscillatorPeriodEdit, {
+                onNone: () => String(binding.period),
+                onSome: edit =>
+                  edit.name === binding.name
+                    ? edit.value
+                    : String(binding.period),
+              }),
+            ),
+            h.OnInput(value =>
+              Message.UpdatedOscillatorPeriod({ name: binding.name, value }),
+            ),
+            h.OnBlur(Message.BlurredOscillatorPeriod({ name: binding.name })),
+          ]),
+        ],
+      ),
+      ...settings.map(({ setting, label, unit, min, max, step }) =>
+        h.keyed('label')(
+          setting,
+          [h.Class('flex min-w-0 flex-col gap-1 text-[10px] text-[#a9a2b3]')],
+          [
+            h.span([], [`${label} · ${binding[setting]}${unit}`]),
+            h.span(
+              [h.Class('flex h-7 items-center')],
+              [
+                h.input([
+                  h.Type('range'),
+                  h.AriaLabel(`Oscillator ${setting}`),
+                  h.Class('shader-range min-w-0'),
+                  h.Min(String(min)),
+                  h.Max(String(max)),
+                  h.Step(String(step)),
+                  h.Value(String(binding[setting])),
+                  h.Style({
+                    '--range': `${((binding[setting] - min) / (max - min)) * 100}%`,
+                  }),
+                  h.OnInput(value =>
+                    Message.UpdatedOscillatorSetting({
+                      name: binding.name,
+                      setting,
+                      value: Number(value),
+                    }),
+                  ),
+                ]),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ],
+  )
+}
+
 const controlInputView = (
   name: string,
   model: Model,
@@ -696,6 +863,10 @@ const controlInputView = (
 ): Html => {
   const maybeBinding = Array.findFirst(
     model.microphoneBindings,
+    binding => binding.name === name,
+  )
+  const maybeOscillator = Array.findFirst(
+    model.oscillatorBindings,
     binding => binding.name === name,
   )
   return h.div(
@@ -738,14 +909,16 @@ const controlInputView = (
                           h.Value(
                             Option.isSome(maybeBinding)
                               ? 'microphone'
-                              : 'manual',
+                              : Option.isSome(maybeOscillator)
+                                ? 'oscillator'
+                                : 'manual',
                           ),
                           h.OnChange(input =>
                             Message.SelectedControlInput({
                               name,
                               input:
-                                input === 'microphone'
-                                  ? 'microphone'
+                                input === 'microphone' || input === 'oscillator'
+                                  ? input
                                   : 'manual',
                             }),
                           ),
@@ -753,6 +926,7 @@ const controlInputView = (
                         [
                           h.option([h.Value('manual')], ['Manual']),
                           h.option([h.Value('microphone')], ['Microphone']),
+                          h.option([h.Value('oscillator')], ['Oscillator']),
                         ],
                       ),
                       dropdownCaret(
@@ -780,6 +954,10 @@ const controlInputView = (
       Option.match(maybeBinding, {
         onNone: () => h.empty,
         onSome: binding => microphoneView(binding, model, h),
+      }),
+      Option.match(maybeOscillator, {
+        onNone: () => h.empty,
+        onSome: binding => oscillatorView(binding, model, h),
       }),
     ],
   )
@@ -810,7 +988,7 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
                   ),
                   h.AriaLabel('Reset controls to code defaults'),
                   h.Title(
-                    'Reset to defaults in the live shader. Microphone inputs stay active.',
+                    'Reset to defaults in the live shader. Connected inputs stay active.',
                   ),
                   h.Disabled(
                     model.engine._tag !== 'Ready' ||
@@ -985,7 +1163,7 @@ const helpView = (h: HtmlBuilder<Message>): Html =>
       h.p(
         [],
         [
-          'Rendering preserves values by control name. Changing a default resets only that control; range and step changes clamp and snap its value. New or renamed controls start at their defaults. Examples start from their defaults on successful render. Reset restores the live shader’s defaults, even if the editor has unsaved changes. Microphone inputs stay active.',
+          'Rendering preserves values by control name. Changing a default resets only that control; range and step changes clamp and snap its value. New or renamed controls start at their defaults. Examples start from their defaults on successful render. Reset restores the live shader’s defaults, even if the editor has unsaved changes. Connected inputs stay active.',
         ],
       ),
       h.p(
