@@ -1,4 +1,4 @@
-# codegl
+# keiso
 
 A browser-only WGSL VJ studio built with Foldkit, Effect, CodeMirror, and WebGPU.
 
