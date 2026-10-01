@@ -1,6 +1,8 @@
 import { Array, Clock, Effect, Option, Schema } from 'effect'
-import { Command, type Runtime, type Update } from 'foldkit'
+import { Command, type Runtime, Update } from 'foldkit'
 import { modifyFields } from 'foldkit/struct'
+
+import { Listbox } from '@foldkit/ui'
 
 import { Broadcast, Snapshot } from './domain/session'
 import { Diagnostic, parseControls } from './domain/shader'
@@ -8,6 +10,7 @@ import { shaderExamples } from './examples'
 import { channel, editor, errorReason, renderer } from './host'
 import { Message } from './message'
 import { EngineState, Flags, Model, RenderState, Validation } from './model'
+import { ExampleListbox } from './view'
 
 export { Message } from './message'
 export { Model } from './model'
@@ -38,6 +41,7 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     startedAt: flags.startedAt,
     source: shaderExamples[0].source,
     exampleId: shaderExamples[0].id,
+    exampleListbox: Listbox.init({ id: 'shader-examples' }),
     engine: EngineState.Starting(),
     validation: Validation.Checking(),
     render: RenderState.Idle(),
@@ -186,6 +190,41 @@ export const FocusDiagnostic = Command.define('FocusDiagnostic', {
 // UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
+
+const foldExampleListboxOutMessage = Listbox.OutMessage.match<
+  Update.Step<Model, Message>
+>({
+  Selected:
+    ({ value }) =>
+    model =>
+      Option.match(
+        Array.findFirst(shaderExamples, example => example.id === value),
+        {
+          onNone: () => ({ model }),
+          onSome: example => ({
+            model: modifyFields(model, {
+              source: () => example.source,
+              exampleId: () => example.id,
+              validation: () => Validation.Checking(),
+              maybeNotice: () => Option.none(),
+            }),
+            commands: [
+              UpdateEditor({ source: example.source, diagnostics: [] }),
+            ],
+          }),
+        },
+      ),
+})
+
+const foldExampleListbox = Update.foldChild({
+  update: ExampleListbox.update,
+  read: (model: Model) => Option.some(model.exampleListbox),
+  write: (model, nextExampleListbox) =>
+    modifyFields(model, { exampleListbox: () => nextExampleListbox }),
+  toParentMessage: message => Message.GotExampleListboxMessage({ message }),
+  foldOutMessage: foldExampleListboxOutMessage,
+})
+
 const hasErrors = (diagnostics: ReadonlyArray<Diagnostic>): boolean =>
   diagnostics.some(({ severity }) => severity === 'error')
 
@@ -473,24 +512,8 @@ export const update = (model: Model, message: Message) =>
         maybeNotice: () => Option.none(),
       }),
     }),
-    SelectedExample: ({ id }) =>
-      Option.match(
-        Array.findFirst(shaderExamples, example => example.id === id),
-        {
-          onNone: () => ({ model }),
-          onSome: example => ({
-            model: modifyFields(model, {
-              source: () => example.source,
-              exampleId: () => id,
-              validation: () => Validation.Checking(),
-              maybeNotice: () => Option.none(),
-            }),
-            commands: [
-              UpdateEditor({ source: example.source, diagnostics: [] }),
-            ],
-          }),
-        },
-      ),
+    GotExampleListboxMessage: ({ message }) =>
+      foldExampleListbox(model, message),
     PressedRender: () => renderDraft(model),
     CompletedValidateShader: ({ source, diagnostics }) =>
       source !== model.source

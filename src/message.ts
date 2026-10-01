@@ -1,6 +1,8 @@
 import { Schema } from 'effect'
 import { defineMessageUnion } from 'foldkit/message'
 
+import { Listbox } from '@foldkit/ui'
+
 import { Broadcast, Snapshot } from './domain/session'
 import { Diagnostic } from './domain/shader'
 
@@ -13,7 +15,7 @@ export const Message = defineMessageUnion({
   SucceededMountChannel: {},
   FailedMountChannel: { reason: Schema.String },
   UpdatedSource: { source: Schema.String },
-  SelectedExample: { id: Schema.String },
+  GotExampleListboxMessage: { message: Listbox.Message },
   PressedRender: {},
   CompletedValidateShader: {
     source: Schema.String,

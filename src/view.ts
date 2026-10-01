@@ -1,13 +1,15 @@
 import { Array, Option } from 'effect'
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
-import { Button } from '@foldkit/ui'
+import { Button, Listbox } from '@foldkit/ui'
 
 import type { Diagnostic, ShaderControl } from './domain/shader'
-import { shaderExamples } from './examples'
+import { type ShaderExample, shaderExamples } from './examples'
 import { MountEditor, MountRenderer } from './host'
 import { Message } from './message'
 import { EngineState, type Model, Validation } from './model'
+
+export const ExampleListbox = Listbox.create<ShaderExample>()
 
 const panelHeadingClass =
   'flex h-8 shrink-0 items-center justify-between gap-3 border-b border-line bg-toolbar px-3 text-[#c9cbd1]'
@@ -111,24 +113,7 @@ const editorView = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.div(
         [h.Class(panelHeadingClass)],
         [
-          h.div(
-            [
-              h.Class(
-                '-ml-3 flex h-full min-w-0 items-center gap-2 border-r border-line bg-panel px-3 font-mono text-[11px] text-[#c3c6cf]',
-              ),
-            ],
-            [
-              h.span([h.Class('text-[9px] font-bold text-[#b8a2ee]')], ['W']),
-              `${selectedName(model).toLowerCase()}.wgsl`,
-              h.span(
-                [
-                  h.Class('ml-1 text-[15px] text-[#857c99]'),
-                  h.Title('Draft editor'),
-                ],
-                ['•'],
-              ),
-            ],
-          ),
+          examplesView(model, h),
           h.span([h.Class(eyebrowClass)], ['FRAGMENT SHADER']),
         ],
       ),
@@ -451,87 +436,86 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
   )
 
 const examplesView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.section(
-    [h.Class('shrink-0 border-t border-line'), h.AriaLabel('Shader examples')],
-    [
-      h.div(
+  h.submodel({
+    slotId: 'shader-examples',
+    model: model.exampleListbox,
+    view: ExampleListbox.view,
+    viewInputs: {
+      items: shaderExamples,
+      itemToValue: example => example.id,
+      itemToSearchText: example => example.name,
+      maybeSelectedValue: Option.some(model.exampleId),
+      ariaLabel: 'Shader examples',
+      className: 'relative -ml-3 h-full min-w-0',
+      buttonClassName:
+        'flex h-full max-w-full items-center gap-2 border-r border-line bg-panel px-3 font-mono text-[11px] text-[#c3c6cf] hover:bg-[#202125] data-[open]:bg-[#202125]',
+      buttonContent: h.div(
+        [h.Class('flex min-w-0 items-center gap-2')],
         [
-          h.Class(
-            'flex h-[26px] items-center border-b border-line bg-toolbar px-3 text-[11px] text-[#cfd0d8]',
+          h.span(
+            [
+              h.Class('text-[9px] font-bold text-[#b8a2ee]'),
+              h.AriaHidden(true),
+            ],
+            ['W'],
           ),
+          h.span(
+            [h.Class('truncate')],
+            [`${selectedName(model).toLowerCase()}.wgsl`],
+          ),
+          h.span(
+            [
+              h.Class('text-[15px] text-[#857c99]'),
+              h.Title('Draft editor'),
+              h.AriaHidden(true),
+            ],
+            ['•'],
+          ),
+          h.span([h.Class('text-muted'), h.AriaHidden(true)], ['⌄']),
         ],
-        [h.h2([h.Class('text-[11px]')], ['Examples'])],
       ),
-      h.ul(
-        [h.Class('grid grid-cols-4 max-[720px]:grid-cols-2')],
-        shaderExamples.map((example, index) =>
-          h.keyed('li')(
-            example.id,
-            [
-              h.Class(
-                'border-line not-first:border-l max-[720px]:odd:border-l-0 max-[720px]:nth-[n+3]:border-t',
-              ),
-            ],
-            [
-              Button.view(
-                {
-                  onClick: Message.SelectedExample({ id: example.id }),
-                  toView: attributes =>
-                    h.button(
-                      [
-                        ...attributes.button,
-                        h.Class(
-                          `example-${example.id} flex size-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[#1a1c20] max-[720px]:gap-2 max-[720px]:px-2 ${example.id === model.exampleId ? 'bg-[#1b1922] shadow-[inset_0_2px_#766593]' : 'bg-[#131518]'}`,
-                        ),
-                        h.AriaPressed(
-                          example.id === model.exampleId ? 'true' : 'false',
-                        ),
-                      ],
-                      [
-                        h.div(
-                          [
-                            h.Class(
-                              'example-art relative flex h-8 w-[42px] shrink-0 justify-between overflow-hidden rounded-[2px] p-[3px] font-mono text-[9px] text-[#f4f0ff99]',
-                            ),
-                            h.AriaHidden(true),
-                          ],
-                          [
-                            h.span([], [`0${index + 1}`]),
-                            h.span([h.Class('self-end text-[12px]')], ['↗']),
-                          ],
-                        ),
-                        h.div(
-                          [h.Class('min-w-0')],
-                          [
-                            h.strong(
-                              [
-                                h.Class(
-                                  'text-[12px] font-medium text-[#d0cddc]',
-                                ),
-                              ],
-                              [example.name],
-                            ),
-                            h.p(
-                              [
-                                h.Class(
-                                  'mt-0.5 truncate text-[10px] text-[#82828f]',
-                                ),
-                              ],
-                              [example.description],
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                },
-                h,
-              ),
-            ],
-          ),
+      itemsClassName:
+        'z-30 w-[300px] max-w-[calc(100vw-16px)] overflow-hidden border border-line bg-toolbar p-1 shadow-lg outline-none',
+      itemsScrollClassName: 'max-h-[min(320px,60dvh)] overflow-y-auto',
+      backdropClassName: 'fixed inset-0 z-20',
+      anchor: { placement: 'bottom-start', gap: 0, padding: 8 },
+      itemToConfig: example => ({
+        className: `example-${example.id} group cursor-pointer px-2 py-2 select-none data-[active]:bg-[#292431]`,
+        content: h.div(
+          [h.Class('flex items-center gap-2.5')],
+          [
+            h.div([
+              h.Class('example-art size-8 shrink-0 rounded-[2px]'),
+              h.AriaHidden(true),
+            ]),
+            h.div(
+              [h.Class('min-w-0 flex-1')],
+              [
+                h.span(
+                  [h.Class('text-[12px] font-medium text-[#d0cddc]')],
+                  [example.name],
+                ),
+                h.p(
+                  [h.Class('mt-0.5 text-[10px] leading-normal text-[#82828f]')],
+                  [example.description],
+                ),
+              ],
+            ),
+            h.span(
+              [
+                h.Class(
+                  'invisible text-[#c6b8ff] group-data-[selected]:visible',
+                ),
+                h.AriaHidden(true),
+              ],
+              ['✓'],
+            ),
+          ],
         ),
-      ),
-    ],
-  )
+      }),
+    },
+    toParentMessage: message => Message.GotExampleListboxMessage({ message }),
+  })
 
 const helpView = (h: HtmlBuilder<Message>): Html =>
   h.section(
@@ -613,7 +597,6 @@ const controlWindowView = (model: Model, h: HtmlBuilder<Message>): Html =>
               ),
             ],
           ),
-          examplesView(model, h),
         ],
       ),
       h.footer(

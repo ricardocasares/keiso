@@ -1,4 +1,4 @@
-import { Effect, Schema, Stream } from 'effect'
+import { Effect, Option, Schema, Stream } from 'effect'
 import { Subscription } from 'foldkit'
 
 import { errorReason, renderer, streamChannel } from './host'
@@ -26,21 +26,25 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
       modelToDependencies: model => ({ isControl: model.mode === 'control' }),
       dependenciesToStream: ({ isControl }) =>
         isControl
-          ? Subscription.keyBindings({
-              bindings: [
-                {
-                  keys: 'Meta+Enter',
-                  whileTyping: 'Allow',
-                  preventDefault: true,
-                  mapEvent: () => Message.PressedRender(),
-                },
-                {
-                  keys: 'Control+Enter',
-                  whileTyping: 'Allow',
-                  preventDefault: true,
-                  mapEvent: () => Message.PressedRender(),
-                },
-              ],
+          ? Subscription.fromEventFilterMapPreventDefault({
+              target: () => window,
+              type: 'keydown',
+              options: { capture: true },
+              filterMapEvent: event => {
+                if (
+                  event.defaultPrevented ||
+                  event.isComposing ||
+                  event.repeat ||
+                  event.key !== 'Enter' ||
+                  event.altKey ||
+                  event.shiftKey ||
+                  !(event.metaKey || event.ctrlKey)
+                ) {
+                  return Option.none()
+                }
+                event.stopPropagation()
+                return Option.some(Message.PressedRender())
+              },
             })
           : Stream.empty,
     },

@@ -3,6 +3,8 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
+import { Listbox } from '@foldkit/ui'
+
 import { Broadcast, Snapshot } from './domain/session'
 import { type Diagnostic, parseControls } from './domain/shader'
 import { shaderExamples } from './examples'
@@ -155,9 +157,29 @@ describe('live performance safety', () => {
     story(
       update,
       given(liveModel),
-      message(Message.SelectedExample({ id: example.id })),
+      message(
+        Message.GotExampleListboxMessage({
+          message: Listbox.Message.Opened({
+            maybeActiveItemIndex: Option.none(),
+          }),
+        }),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      message(
+        Message.GotExampleListboxMessage({
+          message: Listbox.Message.SelectedItem({ item: example.id }),
+        }),
+      ),
       Command.expectExact(
+        Listbox.FocusButton({ id: 'shader-examples' }),
         UpdateEditor({ source: example.source, diagnostics: [] }),
+      ),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
       ),
       Command.resolve(UpdateEditor, Message.CompletedUpdateEditor()),
       model(model => {

@@ -1,6 +1,8 @@
 import { Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
+import { Listbox } from '@foldkit/ui'
+
 import { Snapshot } from './domain/session'
 import { Diagnostic } from './domain/shader'
 
@@ -26,6 +28,7 @@ export const Model = Schema.Struct({
   startedAt: Schema.Number,
   source: Schema.String,
   exampleId: Schema.String,
+  exampleListbox: Listbox.Model,
   engine: EngineState,
   validation: Validation,
   render: RenderState,

@@ -6,12 +6,15 @@ import {
   click,
   expect,
   given,
+  keydown,
   role,
   scene,
   text,
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
 import { describe, test } from 'vitest'
+
+import { Listbox } from '@foldkit/ui'
 
 import { Snapshot } from './domain/session'
 import { type Diagnostic, parseControls } from './domain/shader'
@@ -62,9 +65,24 @@ const acknowledgeRender = Command.resolveAll(
   [BroadcastState, Message.CompletedBroadcastState()],
   [ShowDiagnostics, Message.CompletedShowDiagnostics()],
 )
+const focusExampleItems = Command.resolve(
+  Listbox.FocusItems,
+  Listbox.Message.CompletedFocusItems(),
+)
+const mountExampleListbox = Mount.resolveAll(
+  [Listbox.AnchorListbox, Listbox.Message.CompletedAnchorListbox()],
+  [
+    Listbox.PortalListboxBackdrop,
+    Listbox.Message.CompletedPortalListboxBackdrop(),
+  ],
+)
+const focusExampleButton = Command.resolve(
+  Listbox.FocusButton,
+  Listbox.Message.CompletedFocusButton(),
+)
 
 describe('control window', () => {
-  test('starts with an editor, output, examples, and a render shortcut', () => {
+  test('starts with an editor, output, a render shortcut, and a keyboard-accessible example picker', () => {
     scene(
       { update, view },
       given(initialModel),
@@ -74,10 +92,9 @@ describe('control window', () => {
       expect(text('⌘+Enter')).toExist(),
       expect(role('button', { name: 'Render shader' })).toBeAbsent(),
       expect(role('button', { name: 'Projection ↗' })).toBeDisabled(),
-      expect(text('Aurora')).toExist(),
-      expect(text('Liquid chrome')).toExist(),
-      expect(text('Neon tunnel')).toExist(),
-      expect(text('Acid plasma')).toExist(),
+      expect(role('button', { name: 'Shader examples' })).toExist(),
+      expect(role('listbox')).toBeAbsent(),
+      expect(role('region', { name: 'Shader examples' })).toBeAbsent(),
       Mount.expectExact(MountEditor, MountRenderer),
       mountEditor,
       updateEditor,
@@ -86,6 +103,33 @@ describe('control window', () => {
       renderInitialShader,
       acknowledgeRender,
       expect(role('slider', { name: 'speed' })).toExist(),
+      expect(text('Draft is live')).toExist(),
+      keydown(role('button', { name: 'Shader examples' }), 'ArrowDown'),
+      focusExampleItems,
+      mountExampleListbox,
+      expect(role('option', { name: /^Aurora/ })).toHaveAttr(
+        'aria-selected',
+        'true',
+      ),
+      expect(role('option', { name: /^Liquid chrome/ })).toExist(),
+      expect(role('option', { name: /^Neon tunnel/ })).toExist(),
+      expect(role('option', { name: /^Acid plasma/ })).toExist(),
+      keydown(role('listbox'), 'ArrowDown'),
+      Command.expectExact(
+        Listbox.ScrollIntoView({ id: 'shader-examples', index: 1 }),
+      ),
+      Command.resolve(
+        Listbox.ScrollIntoView,
+        Listbox.Message.CompletedScrollIntoView(),
+      ),
+      expect(role('option', { name: /^Liquid chrome/ })).toHaveAttr(
+        'data-active',
+        '',
+      ),
+      keydown(role('listbox'), 'Escape'),
+      focusExampleButton,
+      Mount.expectEnded(Listbox.AnchorListbox, Listbox.PortalListboxBackdrop),
+      expect(role('listbox')).toBeAbsent(),
       expect(text('Draft is live')).toExist(),
     )
   })
@@ -151,15 +195,18 @@ describe('control window', () => {
       ),
       Command.resolve(OpenProjection, Message.CompletedOpenProjection()),
       expect(text('Projection window opened')).toExist(),
-      click(
-        role('button', {
-          name: /Liquid chrome/,
-        }),
-      ),
+      click(role('button', { name: 'Shader examples' })),
+      focusExampleItems,
+      mountExampleListbox,
+      click(role('option', { name: /^Liquid chrome/ })),
       Command.expectExact(
+        Listbox.FocusButton({ id: 'shader-examples' }),
         UpdateEditor({ source: chrome.source, diagnostics: [] }),
       ),
+      focusExampleButton,
+      Mount.expectEnded(Listbox.AnchorListbox, Listbox.PortalListboxBackdrop),
       updateEditor,
+      expect(role('listbox')).toBeAbsent(),
       expect(text('Live shader protected · unpublished edits')).toExist(),
       Command.expectNone(),
     )
