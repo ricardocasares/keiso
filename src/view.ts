@@ -424,14 +424,6 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
               ),
           }),
       }),
-      h.p(
-        [
-          h.Class(
-            'mt-auto shrink-0 border-t border-line px-3 py-1.5 text-[10px] text-[#747d85]',
-          ),
-        ],
-        ['Adjustments are live. Code changes wait for you.'],
-      ),
     ],
   )
 
