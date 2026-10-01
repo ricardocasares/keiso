@@ -9,6 +9,15 @@ import { MountEditor, MountRenderer } from './host'
 import { Message } from './message'
 import { EngineState, type Model, Validation } from './model'
 
+const panelHeadingClass =
+  'flex h-8 shrink-0 items-center justify-between gap-3 border-b border-line bg-toolbar px-3 text-[#c9cbd1]'
+const eyebrowClass =
+  'font-mono text-[9px] tracking-[0.6px] text-[#777e88] max-[1000px]:text-[8px]'
+const toolbarButtonClass =
+  'rounded-[3px] border px-2.5 py-0.5 text-[12px] leading-[20px] font-medium transition-colors'
+const stageMessageClass =
+  'absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-auto bg-[#0d1015] p-4 text-center text-[#a8acb4] [&_strong]:text-[#d4c5f4] [&_p]:max-w-[420px] [&_p]:text-[12px] [&_p]:leading-relaxed'
+
 const button = (
   label: string,
   message: Message,
@@ -37,31 +46,51 @@ const selectedName = (model: Model): string =>
 
 const headerView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.header(
-    [h.Class('app-header')],
+    [
+      h.Class(
+        'flex h-10 shrink-0 items-center gap-4 border-b border-line px-3 max-[720px]:gap-2 max-[720px]:px-2.5',
+      ),
+    ],
     [
       h.div(
-        [h.Class('brand')],
+        [h.Class('flex items-center gap-1.5')],
         [
-          h.span([h.Class('brand-symbol'), h.AriaHidden(true)], ['◈']),
-          h.h1([], ['codegl']),
-          h.span([h.Class('version')], ['V1']),
+          h.span(
+            [
+              h.Class('text-[21px] leading-none text-[#c6b8ff]'),
+              h.AriaHidden(true),
+            ],
+            ['◈'],
+          ),
+          h.h1(
+            [h.Class('text-[16px] font-semibold tracking-[-0.5px]')],
+            ['codegl'],
+          ),
+          h.span([h.Class('font-mono text-[10px] text-[#b7a3ee]')], ['V1']),
         ],
       ),
-      h.div([h.Class('header-caption')], ['A live canvas for your code.']),
       h.div(
-        [h.Class('header-actions')],
+        [
+          h.Class(
+            'border-l border-line pl-4 text-[12px] text-[#b9bdc5] max-[720px]:hidden',
+          ),
+        ],
+        ['Untitled session'],
+      ),
+      h.div(
+        [h.Class('ml-auto flex items-center gap-1.5 max-[720px]:gap-1')],
         [
           button(
             'WGSL guide',
             Message.ClickedHelp(),
-            'button subtle',
+            `${toolbarButtonClass} border-transparent text-[#979ba4] hover:bg-[#202125] hover:text-[#eee]`,
             false,
             h,
           ),
           button(
             'Projection ↗',
             Message.ClickedProjection(),
-            'button projection-button',
+            `${toolbarButtonClass} border-[#3b3d43] bg-[#1c1e21] text-[#e4e5e8] hover:bg-[#2b2b32]`,
             model.engine._tag !== 'Ready',
             h,
           ),
@@ -72,48 +101,70 @@ const headerView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const editorView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('panel editor-panel'), h.AriaLabel('Shader editor')],
+    [
+      h.Class(
+        'flex min-h-0 flex-col overflow-hidden border-r border-line bg-panel max-[720px]:h-[60dvh] max-[720px]:min-h-80 max-[720px]:border-r-0 max-[720px]:border-b',
+      ),
+      h.AriaLabel('Shader editor'),
+    ],
     [
       h.div(
-        [h.Class('panel-heading')],
+        [h.Class(panelHeadingClass)],
         [
           h.div(
-            [h.Class('file-tab')],
             [
-              h.span([h.Class('file-icon')], ['W']),
+              h.Class(
+                '-ml-3 flex h-full min-w-0 items-center gap-2 border-r border-line bg-panel px-3 font-mono text-[11px] text-[#c3c6cf]',
+              ),
+            ],
+            [
+              h.span([h.Class('text-[9px] font-bold text-[#b8a2ee]')], ['W']),
               `${selectedName(model).toLowerCase()}.wgsl`,
-              h.span([h.Class('draft-dot'), h.Title('Draft editor')], ['•']),
+              h.span(
+                [
+                  h.Class('ml-1 text-[15px] text-[#857c99]'),
+                  h.Title('Draft editor'),
+                ],
+                ['•'],
+              ),
             ],
           ),
-          h.span([h.Class('eyebrow')], ['FRAGMENT SHADER']),
+          h.span([h.Class(eyebrowClass)], ['FRAGMENT SHADER']),
         ],
       ),
       h.div([
-        h.Class('code-host'),
+        h.Class('min-h-0 flex-1 overflow-hidden'),
         h.OnMount(MountEditor({ source: model.source })),
       ]),
       diagnosticsView(model, h),
       h.div(
-        [h.Class('editor-footer')],
+        [
+          h.Class(
+            'flex min-h-[34px] shrink-0 items-center justify-between border-t border-line bg-status px-2.5 py-0.5 font-mono text-[10px]',
+          ),
+        ],
         [
           h.span(
-            [h.Class('muted')],
+            [h.Class('text-muted')],
             [
               `${model.source.split('\n').length} lines`,
-              h.span([h.Class('separator')], ['/']),
+              h.span([h.Class('mx-2 text-[#454950]')], ['/']),
               'WGSL',
             ],
           ),
           h.div(
-            [h.Class('render-action')],
+            [h.Class('flex items-center gap-2.5')],
             [
-              h.kbd([], ['⌘ / Ctrl ↵']),
+              h.kbd(
+                [h.Class('text-[#85838e] max-[1000px]:hidden')],
+                ['⌘ / Ctrl ↵'],
+              ),
               button(
                 model.render._tag === 'Compiling'
                   ? 'Compiling…'
                   : 'Render shader',
                 Message.PressedRender(),
-                'button render-button',
+                `${toolbarButtonClass} border-accent bg-accent text-[#191524] hover:bg-[#d1c1ff]`,
                 model.engine._tag !== 'Ready' ||
                   model.render._tag === 'Compiling',
                 h,
@@ -139,7 +190,7 @@ const diagnosticView = (
           line: diagnostic.line,
           column: diagnostic.column,
         }),
-        `diagnostic ${diagnostic.severity}`,
+        `w-full bg-transparent p-1 text-left font-mono text-[11px] leading-normal ${diagnostic.severity === 'error' ? 'text-[#f4a5a5]' : diagnostic.severity === 'warning' ? 'text-[#e9c886]' : 'text-[#a2b9e8]'}`,
         false,
         h,
       ),
@@ -148,12 +199,18 @@ const diagnosticView = (
 
 const diagnosticsView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.div(
-    [h.Class('diagnostics'), h.Role('status'), h.AriaLive('polite')],
+    [
+      h.Class(
+        'max-h-[140px] min-h-[26px] overflow-auto border-t border-[#263532] bg-[#131919]',
+      ),
+      h.Role('status'),
+      h.AriaLive('polite'),
+    ],
     [
       Validation.match(model.validation, {
         Checking: () =>
           h.p(
-            [h.Class('validation-line muted')],
+            [h.Class('flex items-center px-3 py-1 text-[11px] text-muted')],
             [
               model.engine._tag === 'Starting'
                 ? '○  Starting WebGPU…'
@@ -166,15 +223,16 @@ const diagnosticsView = (model: Model, h: HtmlBuilder<Message>): Html =>
           Array.match(diagnostics, {
             onEmpty: () =>
               h.p(
-                [h.Class('validation-line success')],
                 [
-                  '✓  No issues found',
-                  h.span([h.Class('muted')], ['Ready when you are.']),
+                  h.Class(
+                    'flex items-center px-3 py-1 text-[11px] text-[#9bd0b4]',
+                  ),
                 ],
+                ['✓  No issues found'],
               ),
             onNonEmpty: diagnostics =>
               h.ul(
-                [h.Class('diagnostic-list')],
+                [h.Class('px-2 py-1')],
                 diagnostics.map(diagnostic => diagnosticView(diagnostic, h)),
               ),
           }),
@@ -184,23 +242,26 @@ const diagnosticsView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const canvasView = (h: HtmlBuilder<Message>): Html =>
   h.canvas([
-    h.Class('render-canvas'),
+    h.Class('block size-full bg-black'),
     h.AriaLabel('Live WGSL render'),
     h.OnMount(MountRenderer()),
   ])
 
 const previewView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('panel preview-panel'), h.AriaLabel('Live output')],
+    [
+      h.Class('flex min-h-0 flex-1 flex-col overflow-hidden bg-panel'),
+      h.AriaLabel('Live output'),
+    ],
     [
       h.div(
-        [h.Class('panel-heading')],
+        [h.Class(panelHeadingClass)],
         [
           h.h2([], ['Live output']),
           h.span(
             [
               h.Class(
-                `live-badge ${model.engine._tag === 'Ready' && Option.isSome(model.maybeLive) ? 'is-live' : ''}`,
+                `font-mono text-[9px] tracking-[0.6px] ${model.engine._tag === 'Ready' && Option.isSome(model.maybeLive) ? 'text-[#a7d8b6]' : 'text-[#7b8089]'}`,
               ),
             ],
             [
@@ -214,16 +275,20 @@ const previewView = (model: Model, h: HtmlBuilder<Message>): Html =>
         ],
       ),
       h.div(
-        [h.Class('preview-stage')],
+        [
+          h.Class(
+            'relative min-h-0 flex-1 overflow-hidden bg-black max-[720px]:aspect-video max-[720px]:flex-none',
+          ),
+        ],
         [
           canvasView(h),
           EngineState.match(model.engine, {
             Starting: () =>
-              h.div([h.Class('stage-message')], ['Preparing your canvas…']),
+              h.div([h.Class(stageMessageClass)], ['Preparing your canvas…']),
             Ready: () => h.empty,
             Failed: ({ reason }) =>
               h.div(
-                [h.Class('stage-message'), h.Role('alert')],
+                [h.Class(stageMessageClass), h.Role('alert')],
                 [
                   h.strong([], ['WebGPU unavailable']),
                   h.p([], [reason]),
@@ -239,7 +304,11 @@ const previewView = (model: Model, h: HtmlBuilder<Message>): Html =>
         ],
       ),
       h.div(
-        [h.Class('preview-footer')],
+        [
+          h.Class(
+            'flex min-h-[26px] shrink-0 items-center justify-between gap-3 border-t border-line bg-status px-3 py-1 font-mono text-[9px] text-[#828a93]',
+          ),
+        ],
         [
           h.span([], ['WEBGPU']),
           h.span(
@@ -268,17 +337,25 @@ const controlView = (
   const proportion = (control.value - control.min) / (control.max - control.min)
   return h.keyed('li')(
     control.name,
-    [h.Class(`control control-${control.kind}`)],
+    [h.Class('min-w-0')],
     [
       h.div(
-        [h.Class('control-title')],
+        [h.Class('mb-2 flex items-center justify-between gap-1.5 text-[11px]')],
         [
           h.label(
-            [h.For(`control-${control.name}`)],
+            [
+              h.For(`control-${control.name}`),
+              h.Class('wrap-anywhere text-[#9da3ad] capitalize'),
+            ],
             [control.name.replaceAll('_', ' ')],
           ),
           h.output(
-            [h.For(`control-${control.name}`)],
+            [
+              h.For(`control-${control.name}`),
+              h.Class(
+                'rounded-[2px] bg-[#24202e] px-1 py-0.5 font-mono text-[10px] text-[#d3c3fc]',
+              ),
+            ],
             [Number(control.value.toPrecision(6)).toString()],
           ),
         ],
@@ -286,19 +363,35 @@ const controlView = (
       control.kind === 'knob'
         ? h.div(
             [
-              h.Class('knob'),
+              h.Class('knob mx-auto mb-2 size-[42px] rounded-full p-[3px]'),
               h.AriaHidden(true),
               h.Style({
                 '--turn': `${-135 + proportion * 270}deg`,
                 '--sweep': `${proportion * 270}deg`,
               }),
             ],
-            [h.div([h.Class('knob-cap')], [h.span([h.Class('knob-pointer')])])],
+            [
+              h.div(
+                [
+                  h.Class(
+                    'knob-cap relative size-full rotate-(--turn) rounded-full border-[3px] border-panel shadow-[0_3px_9px_#0007]',
+                  ),
+                ],
+                [
+                  h.span([
+                    h.Class(
+                      'absolute top-1 left-[calc(50%-1px)] h-[9px] w-0.5 rounded-[2px] bg-[#ccbcf8]',
+                    ),
+                  ]),
+                ],
+              ),
+            ],
           )
         : h.empty,
       h.input([
         h.Id(`control-${control.name}`),
         h.Type('range'),
+        h.Class('shader-range'),
         h.Min(String(control.min)),
         h.Max(String(control.max)),
         h.Step(String(control.step)),
@@ -310,7 +403,7 @@ const controlView = (
         ),
       ]),
       h.div(
-        [h.Class('control-bounds')],
+        [h.Class('flex justify-between font-mono text-[9px] text-[#686d76]')],
         [h.span([], [String(control.min)]), h.span([], [String(control.max)])],
       ),
     ],
@@ -319,31 +412,40 @@ const controlView = (
 
 const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('panel controls-panel'), h.AriaLabel('Live shader controls')],
+    [
+      h.Class(
+        'flex max-h-[45%] min-h-0 flex-col overflow-hidden border-t border-line bg-panel max-[720px]:max-h-80',
+      ),
+      h.AriaLabel('Live shader controls'),
+    ],
     [
       h.div(
-        [h.Class('panel-heading')],
+        [h.Class(panelHeadingClass)],
         [
           h.h2([], ['Parameters']),
-          h.span([h.Class('eyebrow')], ['GENERATED FROM WGSL']),
+          h.span([h.Class(eyebrowClass)], ['GENERATED FROM WGSL']),
         ],
       ),
       Option.match(model.maybeLive, {
         onNone: () =>
           h.p(
-            [h.Class('empty-controls')],
+            [h.Class('overflow-auto px-3 py-4 text-[12px] text-[#7e8590]')],
             ['Your shader’s controls will appear here.'],
           ),
         onSome: live =>
           Array.match(live.controls, {
             onEmpty: () =>
               h.p(
-                [h.Class('empty-controls')],
+                [h.Class('overflow-auto px-3 py-4 text-[12px] text-[#7e8590]')],
                 ['Add an @slider or @knob annotation to expose a parameter.'],
               ),
             onNonEmpty: controls =>
               h.ul(
-                [h.Class('controls-grid')],
+                [
+                  h.Class(
+                    'grid min-h-0 grid-cols-[repeat(auto-fit,minmax(100px,1fr))] items-center gap-4 overflow-auto p-3 max-[1000px]:gap-3',
+                  ),
+                ],
                 controls.map(control =>
                   controlView(
                     control,
@@ -356,7 +458,11 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
           }),
       }),
       h.p(
-        [h.Class('controls-hint')],
+        [
+          h.Class(
+            'mt-auto shrink-0 border-t border-line px-3 py-1.5 text-[10px] text-[#747d85]',
+          ),
+        ],
         ['Adjustments are live. Code changes wait for you.'],
       ),
     ],
@@ -364,21 +470,26 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const examplesView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('examples'), h.AriaLabel('Shader examples')],
+    [h.Class('shrink-0 border-t border-line'), h.AriaLabel('Shader examples')],
     [
       h.div(
-        [h.Class('examples-heading')],
         [
-          h.h2([], ['A place to start']),
-          h.p([], ['Load a sketch. Make it yours. Render when ready.']),
+          h.Class(
+            'flex h-[26px] items-center border-b border-line bg-toolbar px-3 text-[11px] text-[#cfd0d8]',
+          ),
         ],
+        [h.h2([h.Class('text-[11px]')], ['Examples'])],
       ),
       h.ul(
-        [h.Class('example-grid')],
+        [h.Class('grid grid-cols-4 max-[720px]:grid-cols-2')],
         shaderExamples.map((example, index) =>
           h.keyed('li')(
             example.id,
-            [],
+            [
+              h.Class(
+                'border-line not-first:border-l max-[720px]:odd:border-l-0 max-[720px]:nth-[n+3]:border-t',
+              ),
+            ],
             [
               Button.view(
                 {
@@ -388,7 +499,7 @@ const examplesView = (model: Model, h: HtmlBuilder<Message>): Html =>
                       [
                         ...attributes.button,
                         h.Class(
-                          `example-card example-${example.id} ${example.id === model.exampleId ? 'selected' : ''}`,
+                          `example-${example.id} flex size-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[#1a1c20] max-[720px]:gap-2 max-[720px]:px-2 ${example.id === model.exampleId ? 'bg-[#1b1922] shadow-[inset_0_2px_#766593]' : 'bg-[#131518]'}`,
                         ),
                         h.AriaPressed(
                           example.id === model.exampleId ? 'true' : 'false',
@@ -396,17 +507,36 @@ const examplesView = (model: Model, h: HtmlBuilder<Message>): Html =>
                       ],
                       [
                         h.div(
-                          [h.Class('example-art'), h.AriaHidden(true)],
+                          [
+                            h.Class(
+                              'example-art relative flex h-8 w-[42px] shrink-0 justify-between overflow-hidden rounded-[2px] p-[3px] font-mono text-[9px] text-[#f4f0ff99]',
+                            ),
+                            h.AriaHidden(true),
+                          ],
                           [
                             h.span([], [`0${index + 1}`]),
-                            h.span([h.Class('example-arrow')], ['↗']),
+                            h.span([h.Class('self-end text-[12px]')], ['↗']),
                           ],
                         ),
                         h.div(
-                          [h.Class('example-copy')],
+                          [h.Class('min-w-0')],
                           [
-                            h.strong([], [example.name]),
-                            h.p([], [example.description]),
+                            h.strong(
+                              [
+                                h.Class(
+                                  'text-[12px] font-medium text-[#d0cddc]',
+                                ),
+                              ],
+                              [example.name],
+                            ),
+                            h.p(
+                              [
+                                h.Class(
+                                  'mt-0.5 truncate text-[10px] text-[#82828f]',
+                                ),
+                              ],
+                              [example.description],
+                            ),
                           ],
                         ),
                       ],
@@ -423,7 +553,11 @@ const examplesView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const helpView = (h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('help-panel')],
+    [
+      h.Class(
+        'max-h-[40%] shrink-0 overflow-auto border-b border-[#433b50] bg-[#19171f] p-3 max-[720px]:max-h-[40dvh] [&_p]:mt-2 [&_p]:text-[12px] [&_p]:leading-normal [&_p]:text-[#a3a0ad]',
+      ),
+    ],
     [
       h.h2([], ['Your shader, your controls']),
       h.p(
@@ -433,7 +567,11 @@ const helpView = (h: HtmlBuilder<Message>): Html =>
         ],
       ),
       h.pre(
-        [],
+        [
+          h.Class(
+            'mt-2 overflow-auto rounded bg-[#100f16] p-2.5 font-mono text-[12px] leading-normal text-[#bcb0de]',
+          ),
+        ],
         [
           '// @slider speed 0 3 1 0.01\n// @knob intensity 0 2 1 0.01\n\nfn fragment(uv: vec2f) -> vec4f {\n  return vec4f(uv, sin(globals.time * controls.speed), 1.0);\n}',
         ],
@@ -455,37 +593,40 @@ const helpView = (h: HtmlBuilder<Message>): Html =>
 
 const controlWindowView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.div(
-    [h.Class('application')],
+    [
+      h.Class(
+        'flex h-dvh min-h-[460px] flex-col max-[720px]:h-auto max-[720px]:min-h-dvh',
+      ),
+    ],
     [
       headerView(model, h),
       h.main(
-        [h.Class('workspace')],
+        [h.Class('flex min-h-0 flex-1 flex-col')],
         [
-          h.div(
-            [h.Class('workspace-heading')],
-            [
-              h.div(
-                [],
-                [
-                  h.span([h.Class('eyebrow')], ['WORKSPACE']),
-                  h.span([h.Class('workspace-name')], ['Untitled session']),
-                ],
-              ),
-              h.span([h.Class('session-status')], ['●  LOCAL SESSION']),
-            ],
-          ),
           model.isHelpOpen ? helpView(h) : h.empty,
           Option.match(model.maybeNotice, {
             onNone: () => h.empty,
             onSome: reason =>
-              h.p([h.Class('notice'), h.Role('alert')], [reason]),
+              h.p(
+                [
+                  h.Class(
+                    'max-h-[20%] shrink-0 overflow-auto border-b border-[#5b4435] bg-[#251d17] px-3 py-1.5 text-[12px] text-[#e9c6aa] max-[720px]:max-h-[40dvh]',
+                  ),
+                  h.Role('alert'),
+                ],
+                [reason],
+              ),
           }),
           h.div(
-            [h.Class('workspace-grid')],
+            [
+              h.Class(
+                'grid min-h-0 flex-1 grid-cols-[minmax(0,1.06fr)_minmax(0,1fr)] max-[720px]:grid-cols-1',
+              ),
+            ],
             [
               editorView(model, h),
               h.div(
-                [h.Class('output-column')],
+                [h.Class('flex min-h-0 min-w-0 flex-col')],
                 [previewView(model, h), controlsView(model, h)],
               ),
             ],
@@ -494,11 +635,18 @@ const controlWindowView = (model: Model, h: HtmlBuilder<Message>): Html =>
         ],
       ),
       h.footer(
-        [h.Class('app-footer')],
         [
-          h.span([], ['BUILT FOR THE MOMENT']),
+          h.Class(
+            'flex min-h-[26px] shrink-0 items-center justify-between gap-4 border-t border-line px-3 py-1 font-mono text-[9px] text-[#646d75] max-[720px]:flex-wrap max-[720px]:gap-2',
+          ),
+        ],
+        [
+          h.span(
+            [h.Class('tracking-[0.5px] text-[#8faaa0] max-[720px]:text-[8px]')],
+            ['●  LOCAL SESSION'],
+          ),
           h.span([], [model.projectionStatus]),
-          h.span([], ['Foldkit + Effect / WGSL']),
+          h.span([h.Class('max-[720px]:hidden')], ['WGSL / WebGPU']),
         ],
       ),
     ],
@@ -511,6 +659,9 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
       : 'codegl · Live shader studio',
   body:
     model.mode === 'projection'
-      ? h.main([h.Class('projection')], [canvasView(h)])
+      ? h.main(
+          [h.Class('h-screen w-screen cursor-none overflow-hidden bg-black')],
+          [canvasView(h)],
+        )
       : controlWindowView(model, h),
 })
