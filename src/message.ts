@@ -3,6 +3,7 @@ import { defineMessageUnion } from 'foldkit/message'
 
 import { Listbox, RadioGroup } from '@foldkit/ui'
 
+import { MidiInput, MidiSignal } from './domain/midi'
 import { Broadcast, Snapshot } from './domain/session'
 import { Diagnostic } from './domain/shader'
 
@@ -32,8 +33,20 @@ export const Message = defineMessageUnion({
   CompletedFocusControlInput: {},
   SelectedControlInput: {
     name: Schema.String,
-    input: Schema.Literals(['manual', 'microphone', 'oscillator']),
+    input: Schema.Literals(['manual', 'microphone', 'oscillator', 'midi']),
   },
+  ClickedMidiLearn: { name: Schema.String },
+  ClickedCancelMidiLearn: {},
+  SucceededStartMidi: {
+    sessionId: Schema.Number,
+    inputs: Schema.Array(MidiInput),
+  },
+  UpdatedMidiInputs: {
+    sessionId: Schema.Number,
+    inputs: Schema.Array(MidiInput),
+  },
+  FailedMidi: { sessionId: Schema.Number, reason: Schema.String },
+  ReceivedMidiSignal: { sessionId: Schema.Number, signal: MidiSignal },
   GotWaveformRadioGroupMessage: {
     controlId: Schema.String,
     message: RadioGroup.Message,

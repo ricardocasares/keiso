@@ -200,7 +200,7 @@ export const parseControls = (source: string): ParsedControls =>
       { controls: [], diagnostics: [] },
     )
 
-const normalizeControlValue = (
+export const normalizeControlValue = (
   control: ShaderControl,
   value: number,
 ): number => {

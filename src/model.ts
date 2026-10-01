@@ -3,6 +3,7 @@ import { defineTaggedUnion } from 'foldkit/schema'
 
 import { Listbox, RadioGroup } from '@foldkit/ui'
 
+import { MidiBinding, MidiInput } from './domain/midi'
 import { OscillatorBinding } from './domain/oscillator'
 import { Snapshot } from './domain/session'
 import { Diagnostic } from './domain/shader'
@@ -24,6 +25,12 @@ export const MicrophoneState = defineTaggedUnion({
   Idle: {},
   Starting: {},
   Ready: {},
+  Failed: { reason: Schema.String },
+})
+export const MidiState = defineTaggedUnion({
+  Idle: {},
+  Starting: {},
+  Ready: { inputs: Schema.Array(MidiInput) },
   Failed: { reason: Schema.String },
 })
 export const MicrophoneBinding = Schema.Struct({
@@ -69,6 +76,10 @@ export const Model = Schema.Struct({
   microphoneSession: Schema.Natural,
   microphoneBindings: Schema.Array(MicrophoneBinding),
   oscillatorBindings: Schema.Array(OscillatorBinding),
+  midi: MidiState,
+  midiSession: Schema.Natural,
+  midiBindings: Schema.Array(MidiBinding),
+  maybeMidiLearning: Schema.Option(Schema.String),
   waveformRadioGroup: RadioGroup.Model,
   maybeOscillatorPeriodEdit: Schema.Option(
     Schema.Struct({ name: Schema.String, value: Schema.String }),

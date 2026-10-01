@@ -46,7 +46,13 @@ Select **+ Input → Oscillator** to animate a control automatically. Choose sin
 
 At full depth, sliders sweep their declared range and colors pulse from black to their chosen color. Lower depth narrows sliders around their range midpoint and reduces how far colors dim. All oscillators use the session clock: equal periods and phases stay together even when attached at different times; a 180° phase offset puts sine waves opposite each other. Select Manual to stop an oscillator and edit the control again. Keep the controller visible for smooth modulation: browsers can throttle its timer when the tab is hidden, reducing projection updates.
 
-**Reset** in the Controls header restores defaults from the last successfully rendered code without rendering or changing the draft. Microphone and oscillator bindings remain active and can update those values again.
+Select **+ Input → MIDI**, allow MIDI access when your browser asks, then move a knob/fader or press a key/pad on your device. The control learns that device, channel, and CC or note number. **Relearn MIDI** assigns another input; **Cancel learn** keeps the previous assignment. Select **Manual** to remove the assignment. You can still adjust the control directly while MIDI is connected; changing a color sets its base hue for MIDI brightness.
+
+MIDI values map across a slider's declared range and step. Keys and pads use note velocity, then return to the minimum on release; color inputs vary brightness from black to the chosen color. Connected and disconnected devices are shown in the input panel, and plugging a device back in resumes its assignment. Mappings live in the current session and are lost on reload.
+
+MIDI requires a browser with Web MIDI support over HTTPS or localhost. Access is requested only when you select MIDI or click Learn/Retry, without SysEx permission. Standard absolute 7-bit control changes and notes are supported; relative encoders, 14-bit controls, and pitch bend need additional support.
+
+**Reset** in the Controls header restores defaults from the last successfully rendered code without rendering or changing the draft. Microphone, oscillator, and MIDI bindings remain active and can update those values again.
 
 Available uniforms:
 
@@ -56,7 +62,7 @@ Available uniforms:
 | `globals.resolution` | `vec2f`         | Current output width and height in physical pixels        |
 | `controls.name`      | `f32` / `vec3f` | Slider value / normalized RGB color                       |
 
-Use `globals.resolution.x / globals.resolution.y` to correct aspect ratio. Custom functions and WGSL expressions work normally. The V1 host provides two uniform buffers; textures, additional bind groups, compute passes, audio, and MIDI are outside its shader contract.
+Use `globals.resolution.x / globals.resolution.y` to correct aspect ratio. Custom functions and WGSL expressions work normally. The V1 host provides two uniform buffers; textures, additional bind groups, compute passes, and raw audio or MIDI data are outside its shader contract. Microphone and MIDI inputs drive the existing `controls.name` uniforms.
 
 Compilation checks syntax, annotations, entry points, and render-pipeline compatibility. A valid shader can still be expensive enough to stall or lose a GPU device; compiler validation cannot prove runtime performance. Test demanding shaders before a show. Device loss is reported in the control window.
 

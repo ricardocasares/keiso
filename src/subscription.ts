@@ -4,9 +4,28 @@ import { Subscription } from 'foldkit'
 import { streamMicrophone } from './audio'
 import { errorReason, renderer, streamChannel } from './host'
 import { Message } from './message'
+import { streamMidi } from './midi'
 import type { Model } from './model'
 
 export const subscriptions = Subscription.make<Model, Message>()(entry => ({
+  midi: entry(
+    { maybeSession: Schema.Option(Schema.Number) },
+    {
+      modelToDependencies: model => ({
+        maybeSession:
+          model.mode === 'control' &&
+          (model.midi._tag === 'Starting' || model.midi._tag === 'Ready') &&
+          Array.isReadonlyArrayNonEmpty(model.midiBindings)
+            ? Option.some(model.midiSession)
+            : Option.none(),
+      }),
+      dependenciesToStream: ({ maybeSession }) =>
+        Option.match(maybeSession, {
+          onNone: () => Stream.empty,
+          onSome: streamMidi,
+        }),
+    },
+  ),
   oscillators: entry(
     { isActive: Schema.Boolean },
     {

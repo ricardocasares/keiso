@@ -5,11 +5,13 @@ import { modifyFields } from 'foldkit/struct'
 import { Listbox, RadioGroup } from '@foldkit/ui'
 
 import { bandLevel, bandsInRange, spectrumBands } from './audio'
+import { MidiSignal, matchesMidiSource } from './domain/midi'
 import { type OscillatorBinding, oscillatorLevel } from './domain/oscillator'
 import { Broadcast, Snapshot } from './domain/session'
 import {
   Diagnostic,
   type ShaderControl,
+  normalizeControlValue,
   parseControls,
   reconcileControls,
 } from './domain/shader'
@@ -21,6 +23,7 @@ import {
   Flags,
   type MicrophoneBinding,
   MicrophoneState,
+  MidiState,
   Model,
   RenderState,
   SpectrumDrag,
@@ -72,6 +75,10 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     microphoneSession: 0,
     microphoneBindings: [],
     oscillatorBindings: [],
+    midi: MidiState.Idle(),
+    midiSession: 0,
+    midiBindings: [],
+    maybeMidiLearning: Option.none(),
     waveformRadioGroup: RadioGroup.init({ id: 'oscillator-waveform' }),
     maybeOscillatorPeriodEdit: Option.none(),
     maybeSelectedControl: Option.none(),
@@ -434,6 +441,15 @@ const completedRender =
             maybeColor: () => reconciledColor(binding),
           }),
         ),
+      midiBindings: bindings =>
+        bindings.filter(isLiveBinding).map(binding =>
+          modifyFields(binding, {
+            maybeColor: () => reconciledColor(binding),
+          }),
+        ),
+      maybeMidiLearning: Option.filter(name =>
+        snapshot.controls.some(control => control.name === name),
+      ),
       maybeSelectedControl: Option.filter(name =>
         snapshot.controls.some(control => control.name === name),
       ),
@@ -475,6 +491,15 @@ const completedRender =
           modifyFields(liveModel, {
             microphoneBindings: () => example.microphoneBindings?.slice() ?? [],
             oscillatorBindings: () => example.oscillatorBindings?.slice() ?? [],
+            midiBindings: bindings =>
+              bindings.filter(
+                binding =>
+                  ![
+                    ...(example.microphoneBindings ?? []),
+                    ...(example.oscillatorBindings ?? []),
+                  ].some(preset => preset.name === binding.name),
+              ),
+            maybeMidiLearning: () => Option.none(),
             maybeSelectedControl: () =>
               Option.map(
                 Array.head([
@@ -557,6 +582,11 @@ const syncControlValues = (
                 maybeColor: () => updatedColor(binding),
               }),
             ),
+            midiBindings: Array.map(binding =>
+              modifyFields(binding, {
+                maybeColor: () => updatedColor(binding),
+              }),
+            ),
           })
         : model
       if (
@@ -616,7 +646,11 @@ const selectedColor = (model: Model, name: string): Option.Option<number> =>
   Option.orElse(
     Option.flatMap(
       Array.findFirst(
-        [...model.microphoneBindings, ...model.oscillatorBindings],
+        [
+          ...model.microphoneBindings,
+          ...model.oscillatorBindings,
+          ...model.midiBindings,
+        ],
         binding => binding.name === name,
       ),
       binding => binding.maybeColor,
@@ -747,6 +781,89 @@ const microphoneIsCurrent = (model: Model, sessionId: number): boolean =>
   model.microphoneSession === sessionId &&
   (model.microphone._tag === 'Starting' || model.microphone._tag === 'Ready')
 
+const midiIsCurrent = (model: Model, sessionId: number): boolean =>
+  model.mode === 'control' &&
+  model.midiSession === sessionId &&
+  (model.midi._tag === 'Starting' || model.midi._tag === 'Ready')
+
+const startMidiLearn = (model: Model, name: string): UpdateReturn => {
+  if (
+    !hasLiveControl(model, name) ||
+    !model.midiBindings.some(binding => binding.name === name)
+  ) {
+    return { model }
+  }
+  const needsConnection =
+    model.midi._tag === 'Idle' || model.midi._tag === 'Failed'
+  return {
+    model: modifyFields(model, {
+      maybeMidiLearning: () => Option.some(name),
+      midi: state => (needsConnection ? MidiState.Starting() : state),
+      midiSession: session => (needsConnection ? session + 1 : session),
+    }),
+  }
+}
+
+const selectControlInput = (
+  model: Model,
+  { name, input }: typeof Message.SelectedControlInput.Type,
+): UpdateReturn => {
+  if (!hasLiveControl(model, name)) {
+    return { model }
+  }
+  const selected = modifyFields(model, {
+    spectrumDrag: () => SpectrumDrag.Idle(),
+    maybeOscillatorPeriodEdit: () => Option.none(),
+    maybeMidiLearning: () => Option.none(),
+    microphoneBindings: bindings =>
+      input !== 'microphone'
+        ? bindings.filter(binding => binding.name !== name)
+        : bindings.some(binding => binding.name === name)
+          ? bindings
+          : bindings.concat({
+              name,
+              bands: bandsInRange(20, 250),
+              gain: 1,
+              maybeColor: selectedColor(model, name),
+            }),
+    oscillatorBindings: bindings =>
+      input !== 'oscillator'
+        ? bindings.filter(binding => binding.name !== name)
+        : bindings.some(binding => binding.name === name)
+          ? bindings
+          : bindings.concat({
+              name,
+              waveform: 'sine',
+              period: 4,
+              depth: 100,
+              phase: 0,
+              maybeColor: selectedColor(model, name),
+            }),
+    midiBindings: bindings =>
+      input !== 'midi'
+        ? bindings.filter(binding => binding.name !== name)
+        : bindings.some(binding => binding.name === name)
+          ? bindings
+          : bindings.concat({
+              name,
+              maybeSource: Option.none(),
+              maybePendingValue: Option.none(),
+              maybeColor: selectedColor(model, name),
+            }),
+  })
+  if (input === 'midi') {
+    const binding = selected.midiBindings.find(binding => binding.name === name)
+    return binding && Option.isNone(binding.maybeSource)
+      ? startMidiLearn(selected, name)
+      : { model: selected }
+  }
+  return {
+    model: Array.isReadonlyArrayEmpty(selected.midiBindings)
+      ? modifyFields(selected, { midi: () => MidiState.Idle() })
+      : selected,
+  }
+}
+
 const controlAtLevel = (
   control: ShaderControl,
   level: number,
@@ -763,20 +880,88 @@ const controlAtLevel = (
   }
   const value = control.min + level * (control.max - control.min)
   return modifyFields(control, {
-    value: () =>
-      Math.min(
-        control.max,
-        Math.max(
-          control.min,
-          Number(
-            (
-              control.min +
-              Math.round((value - control.min) / control.step) * control.step
-            ).toPrecision(6),
-          ),
-        ),
-      ),
+    value: () => normalizeControlValue(control, value),
   })
+}
+
+const syncMidiValues = (model: Model): UpdateReturn => {
+  if (
+    model.mode !== 'control' ||
+    model.engine._tag !== 'Ready' ||
+    model.render._tag === 'Compiling'
+  ) {
+    return { model }
+  }
+  const nextModel = modifyFields(model, {
+    midi: state =>
+      Array.isReadonlyArrayEmpty(model.midiBindings) ? MidiState.Idle() : state,
+    maybeMidiLearning: Option.filter(name =>
+      model.midiBindings.some(binding => binding.name === name),
+    ),
+    midiBindings: Array.map(binding =>
+      modifyFields(binding, { maybePendingValue: () => Option.none() }),
+    ),
+  })
+  return syncControlValues(
+    nextModel,
+    control => {
+      const binding = model.midiBindings.find(
+        binding => binding.name === control.name,
+      )
+      return binding
+        ? Option.match(binding.maybePendingValue, {
+            onNone: () => control,
+            onSome: value =>
+              controlAtLevel(control, value / 127, binding.maybeColor),
+          })
+        : control
+    },
+    false,
+  )
+}
+
+const receiveMidiSignal = (
+  model: Model,
+  { sessionId, signal }: typeof Message.ReceivedMidiSignal.Type,
+): UpdateReturn => {
+  if (
+    !midiIsCurrent(model, sessionId) ||
+    model.midi._tag !== 'Ready' ||
+    model.engine._tag !== 'Ready' ||
+    !Schema.is(MidiSignal)(signal) ||
+    !model.midi.inputs.some(input => input.id === signal.source.inputId)
+  ) {
+    return { model }
+  }
+  const learned =
+    signal.source.kind === 'note' && signal.value === 0
+      ? model
+      : Option.match(model.maybeMidiLearning, {
+          onNone: () => model,
+          onSome: name =>
+            modifyFields(model, {
+              midiBindings: Array.map(binding =>
+                binding.name === name
+                  ? modifyFields(binding, {
+                      maybeSource: () => Option.some(signal.source),
+                    })
+                  : binding,
+              ),
+              maybeMidiLearning: () => Option.none(),
+            }),
+        })
+  const pending = modifyFields(learned, {
+    midiBindings: Array.map(binding =>
+      Option.exists(binding.maybeSource, source =>
+        matchesMidiSource(source, signal.source),
+      )
+        ? modifyFields(binding, {
+            maybePendingValue: () => Option.some(signal.value),
+          })
+        : binding,
+    ),
+  })
+  return syncMidiValues(pending)
 }
 
 const tickOscillators = (model: Model, now: number): UpdateReturn => {
@@ -839,6 +1024,8 @@ const rendererFailed =
     const failedModel = modifyFields(model, {
       engine: () => EngineState.Failed({ reason }),
       microphone: () => MicrophoneState.Idle(),
+      midi: () => MidiState.Idle(),
+      maybeMidiLearning: () => Option.none(),
       spectrum: () => [],
     })
     return model.mode === 'projection'
@@ -916,7 +1103,11 @@ export const update = (model: Model, message: Message) =>
             }),
             commands: [ShowDiagnostics({ source, diagnostics })],
           },
-    CompletedRenderShader: completedRender(model),
+    CompletedRenderShader: payload =>
+      Update.combine(model, [
+        stepModel => completedRender(stepModel)(payload),
+        syncMidiValues,
+      ]),
     UpdatedControl: updateControl(model),
     ClickedResetControls: () =>
       Option.match(model.maybeLive, {
@@ -938,6 +1129,7 @@ export const update = (model: Model, message: Message) =>
             model: modifyFields(model, {
               spectrumDrag: () => SpectrumDrag.Idle(),
               maybeOscillatorPeriodEdit: () => Option.none(),
+              maybeMidiLearning: () => Option.none(),
               maybeSelectedControl: selected =>
                 Option.contains(selected, name)
                   ? Option.none()
@@ -951,45 +1143,43 @@ export const update = (model: Model, message: Message) =>
           model: modifyFields(model, {
             spectrumDrag: () => SpectrumDrag.Idle(),
             maybeOscillatorPeriodEdit: () => Option.none(),
+            maybeMidiLearning: () => Option.none(),
             maybeSelectedControl: () => Option.none(),
           }),
           commands: [FocusControlInput({ name })],
         }),
       }),
     CompletedFocusControlInput: () => ({ model }),
-    SelectedControlInput: ({ name, input }) =>
-      !hasLiveControl(model, name)
+    SelectedControlInput: payload => selectControlInput(model, payload),
+    ClickedMidiLearn: ({ name }) => startMidiLearn(model, name),
+    ClickedCancelMidiLearn: () => ({
+      model: modifyFields(model, { maybeMidiLearning: () => Option.none() }),
+    }),
+    SucceededStartMidi: ({ sessionId, inputs }) =>
+      !midiIsCurrent(model, sessionId)
         ? { model }
         : {
             model: modifyFields(model, {
-              spectrumDrag: () => SpectrumDrag.Idle(),
-              maybeOscillatorPeriodEdit: () => Option.none(),
-              microphoneBindings: bindings =>
-                input !== 'microphone'
-                  ? bindings.filter(binding => binding.name !== name)
-                  : bindings.some(binding => binding.name === name)
-                    ? bindings
-                    : bindings.concat({
-                        name,
-                        bands: bandsInRange(20, 250),
-                        gain: 1,
-                        maybeColor: selectedColor(model, name),
-                      }),
-              oscillatorBindings: bindings =>
-                input !== 'oscillator'
-                  ? bindings.filter(binding => binding.name !== name)
-                  : bindings.some(binding => binding.name === name)
-                    ? bindings
-                    : bindings.concat({
-                        name,
-                        waveform: 'sine',
-                        period: 4,
-                        depth: 100,
-                        phase: 0,
-                        maybeColor: selectedColor(model, name),
-                      }),
+              midi: () => MidiState.Ready({ inputs }),
             }),
           },
+    UpdatedMidiInputs: ({ sessionId, inputs }) =>
+      !midiIsCurrent(model, sessionId) || model.midi._tag !== 'Ready'
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              midi: () => MidiState.Ready({ inputs }),
+            }),
+          },
+    FailedMidi: ({ sessionId, reason }) =>
+      !midiIsCurrent(model, sessionId)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              midi: () => MidiState.Failed({ reason }),
+            }),
+          },
+    ReceivedMidiSignal: payload => receiveMidiSignal(model, payload),
     GotWaveformRadioGroupMessage: ({ controlId: name, message }) =>
       Update.foldChild({
         update: WaveformRadioGroup.update,

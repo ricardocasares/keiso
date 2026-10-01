@@ -4,6 +4,7 @@ import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 import { Button, Listbox, RadioGroup } from '@foldkit/ui'
 
 import { bandsInRange, spectrumBands } from './audio'
+import { type MidiBinding, midiSourceLabel } from './domain/midi'
 import { Waveform } from './domain/oscillator'
 import type { Diagnostic, ShaderControl } from './domain/shader'
 import { type ShaderExample, shaderExamples } from './examples'
@@ -13,6 +14,7 @@ import {
   EngineState,
   type MicrophoneBinding,
   MicrophoneState,
+  MidiState,
   type Model,
   type OscillatorBinding,
   Validation,
@@ -355,11 +357,23 @@ const controlView = (
     model.oscillatorBindings,
     binding => binding.name === control.name,
   )
+  const maybeMidi = Array.findFirst(
+    model.midiBindings,
+    binding => binding.name === control.name,
+  )
   const isSelected = Option.contains(model.maybeSelectedControl, control.name)
   const inputLabel = Option.match(maybeBinding, {
     onNone: () =>
       Option.match(maybeOscillator, {
-        onNone: () => '+ Input',
+        onNone: () =>
+          Option.match(maybeMidi, {
+            onNone: () => '+ Input',
+            onSome: binding =>
+              `MIDI · ${Option.match(binding.maybeSource, {
+                onNone: () => 'Unassigned',
+                onSome: midiSourceLabel,
+              })}${Option.contains(model.maybeMidiLearning, control.name) ? ' · Learning…' : ''}`,
+          }),
         onSome: binding =>
           `Osc · ${binding.waveform} · ${binding.period}s · ${binding.phase}°`,
       }),
@@ -856,6 +870,97 @@ const oscillatorView = (
   )
 }
 
+const midiView = (
+  binding: MidiBinding,
+  model: Model,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const isLearning = Option.contains(model.maybeMidiLearning, binding.name)
+  return h.div(
+    [h.Class('mt-2 space-y-2 text-[11px] text-[#a9a2b3]')],
+    [
+      MidiState.match(model.midi, {
+        Idle: () => h.p([h.Role('status')], ['Click Learn to connect MIDI.']),
+        Starting: () => h.p([h.Role('status')], ['Awaiting MIDI permission…']),
+        Failed: ({ reason }) =>
+          h.div(
+            [h.Class('space-y-2')],
+            [
+              h.p([h.Role('alert'), h.Class('text-[#e9b6a8]')], [reason]),
+              button(
+                'Retry MIDI',
+                Message.ClickedMidiLearn({ name: binding.name }),
+                `${toolbarButtonClass} border-[#67547d] bg-[#302739] text-[#e0d0fb]`,
+                false,
+                h,
+              ),
+            ],
+          ),
+        Ready: ({ inputs }) =>
+          h.div(
+            [h.Role('status'), h.Class('space-y-1')],
+            [
+              h.p(
+                [],
+                [
+                  Array.match(inputs, {
+                    onEmpty: () =>
+                      'No MIDI inputs connected. Plug in a device to continue.',
+                    onNonEmpty: inputs =>
+                      `Connected · ${inputs.map(input => input.name).join(', ')}`,
+                  }),
+                ],
+              ),
+              Option.match(binding.maybeSource, {
+                onNone: () => h.empty,
+                onSome: source =>
+                  inputs.some(input => input.id === source.inputId)
+                    ? h.empty
+                    : h.p(
+                        [h.Class('text-[#e9b6a8]')],
+                        [`Assigned device disconnected · ${source.inputName}`],
+                      ),
+              }),
+            ],
+          ),
+      }),
+      Option.match(binding.maybeSource, {
+        onNone: () => h.empty,
+        onSome: source =>
+          h.p([h.Class('font-mono text-[#c8b7ec]')], [midiSourceLabel(source)]),
+      }),
+      isLearning
+        ? h.div(
+            [h.Class('flex flex-wrap items-center gap-2')],
+            [
+              h.p(
+                [h.Role('status'), h.Class('text-[#dcccfb]')],
+                ['Move a knob/fader or press a key/pad to assign it.'],
+              ),
+              button(
+                'Cancel learn',
+                Message.ClickedCancelMidiLearn(),
+                'text-[10px] text-[#a7a0b6] hover:text-white',
+                false,
+                h,
+              ),
+            ],
+          )
+        : model.midi._tag === 'Failed'
+          ? h.empty
+          : button(
+              Option.isSome(binding.maybeSource)
+                ? 'Relearn MIDI'
+                : 'Learn MIDI',
+              Message.ClickedMidiLearn({ name: binding.name }),
+              `${toolbarButtonClass} border-[#67547d] bg-[#302739] text-[#e0d0fb]`,
+              model.midi._tag === 'Starting',
+              h,
+            ),
+    ],
+  )
+}
+
 const controlInputView = (
   name: string,
   model: Model,
@@ -867,6 +972,10 @@ const controlInputView = (
   )
   const maybeOscillator = Array.findFirst(
     model.oscillatorBindings,
+    binding => binding.name === name,
+  )
+  const maybeMidi = Array.findFirst(
+    model.midiBindings,
     binding => binding.name === name,
   )
   return h.div(
@@ -911,13 +1020,17 @@ const controlInputView = (
                               ? 'microphone'
                               : Option.isSome(maybeOscillator)
                                 ? 'oscillator'
-                                : 'manual',
+                                : Option.isSome(maybeMidi)
+                                  ? 'midi'
+                                  : 'manual',
                           ),
                           h.OnChange(input =>
                             Message.SelectedControlInput({
                               name,
                               input:
-                                input === 'microphone' || input === 'oscillator'
+                                input === 'microphone' ||
+                                input === 'oscillator' ||
+                                input === 'midi'
                                   ? input
                                   : 'manual',
                             }),
@@ -927,6 +1040,7 @@ const controlInputView = (
                           h.option([h.Value('manual')], ['Manual']),
                           h.option([h.Value('microphone')], ['Microphone']),
                           h.option([h.Value('oscillator')], ['Oscillator']),
+                          h.option([h.Value('midi')], ['MIDI']),
                         ],
                       ),
                       dropdownCaret(
@@ -958,6 +1072,10 @@ const controlInputView = (
       Option.match(maybeOscillator, {
         onNone: () => h.empty,
         onSome: binding => oscillatorView(binding, model, h),
+      }),
+      Option.match(maybeMidi, {
+        onNone: () => h.empty,
+        onSome: binding => midiView(binding, model, h),
       }),
     ],
   )
