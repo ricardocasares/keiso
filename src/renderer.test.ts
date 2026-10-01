@@ -1,3 +1,4 @@
+import { modifyFields } from 'foldkit/struct'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { buildShader } from './domain/shader'
@@ -165,7 +166,7 @@ test('startup failures balance GPU error scopes and release the device', async (
 test('the latest render wins and controls use their declared uniform slots', async () => {
   const gpu = fakeGPU()
   const renderer = await createRenderer(gpu.canvas, vi.fn())
-  const controlled = `// @slider speed 0 10 2 0.1\n// @knob zoom 1 8 4 0.1\n${source}`
+  const controlled = `// @slider speed 0 10 2 0.1\n// @color sky #AABBCC\n// @slider zoom 1 8 4 0.1\n${source}`
   const first = renderer.render(source, [], 0)
   const controls = buildShader(controlled).controls
   const second = renderer.render(controlled, controls, 0)
@@ -180,6 +181,20 @@ test('the latest render wins and controls use their declared uniform slots', asy
   const controlBuffer = gpu.device.queue.writeBuffer.mock.lastCall?.[2]
   expect(controlBuffer).toBeInstanceOf(Float32Array)
   expect(controlBuffer[0]).toBe(2)
-  expect(controlBuffer[4]).toBe(4)
+  expect(controlBuffer[4]).toBeCloseTo(170 / 255)
+  expect(controlBuffer[5]).toBeCloseTo(187 / 255)
+  expect(controlBuffer[6]).toBeCloseTo(204 / 255)
+  expect(controlBuffer[7]).toBe(0)
+  expect(controlBuffer[8]).toBe(4)
+  renderer.setControls(
+    controls.map(control =>
+      modifyFields(control, {
+        value: () => (control.kind === 'color' ? 0x112233 : control.value),
+      }),
+    ),
+  )
+  expect(controlBuffer[4]).toBeCloseTo(17 / 255)
+  expect(controlBuffer[5]).toBeCloseTo(34 / 255)
+  expect(controlBuffer[6]).toBeCloseTo(51 / 255)
   renderer.dispose()
 })

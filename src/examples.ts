@@ -18,9 +18,9 @@ export const shaderExamples: readonly [ShaderExample, ...Array<ShaderExample>] =
       description: 'Fluid ribbons of electric color.',
       accent: '#ba96ff',
       source: `// A soft, living field of light.
-// @knob speed 0 3 0.7 0.01
+// @slider speed 0 3 0.7 0.01
 // @slider intensity 0.2 2 1.1 0.01
-// @knob frequency 1 10 4.2 0.1
+// @slider frequency 1 10 4.2 0.1
 
 fn fragment(uv: vec2f) -> vec4f {
   let aspect = globals.resolution.x / globals.resolution.y;
@@ -44,9 +44,9 @@ fn fragment(uv: vec2f) -> vec4f {
       description: 'Sculpted metallic waves and reflections.',
       accent: '#a2d3ff',
       source: `// Distorted concentric rings with a chrome finish.
-// @knob speed 0 3 0.6 0.01
+// @slider speed 0 3 0.6 0.01
 // @slider rings 3 24 12 0.1
-// @knob distortion 0 1 0.35 0.01
+// @slider distortion 0 1 0.35 0.01
 
 fn fragment(uv: vec2f) -> vec4f {
   let aspect = globals.resolution.x / globals.resolution.y;
@@ -68,9 +68,9 @@ fn fragment(uv: vec2f) -> vec4f {
       description: 'An endless dive through neon geometry.',
       accent: '#ff85b5',
       source: `// Polar coordinates turn a grid into an infinite tunnel.
-// @knob speed 0 3 0.8 0.01
+// @slider speed 0 3 0.8 0.01
 // @slider density 3 20 9 1
-// @knob twist -2 2 0.4 0.01
+// @slider twist -2 2 0.4 0.01
 
 fn fragment(uv: vec2f) -> vec4f {
   let aspect = globals.resolution.x / globals.resolution.y;
@@ -94,9 +94,9 @@ fn fragment(uv: vec2f) -> vec4f {
       description: 'A saturated, slow-morphing color field.',
       accent: '#cff78b',
       source: `// Layer a few waves into an organic color field.
-// @knob speed 0 3 0.65 0.01
+// @slider speed 0 3 0.65 0.01
 // @slider scale 1 12 5 0.1
-// @knob palette 0 6.28 0.4 0.01
+// @slider palette 0 6.28 0.4 0.01
 
 fn fragment(uv: vec2f) -> vec4f {
   let aspect = globals.resolution.x / globals.resolution.y;

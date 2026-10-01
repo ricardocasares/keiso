@@ -26,17 +26,18 @@ Write a fragment function that receives normalized UV coordinates (top-left is `
 
 ```wgsl
 // @slider speed 0 3 1 0.01
-// @knob intensity 0 2 1 0.01
+// @slider intensity 0 2 1 0.01
+// @color sky #AABBCC
 
 fn fragment(uv: vec2f) -> vec4f {
   let wave = 0.5 + 0.5 * sin(uv.x * 12.0 + globals.time * controls.speed);
-  return vec4f(vec3f(wave, uv.y, 0.7) * controls.intensity, 1.0);
+  return vec4f(controls.sky * wave * controls.intensity, 1.0);
 }
 ```
 
-Each annotation is `// @slider|@knob name minimum maximum default step`. Up to 16 scalar controls are supported. Names must be distinct WGSL identifiers, values finite, the default value within range, and step positive. Access them as `controls.name`.
+Slider annotations use `// @slider name minimum maximum default step`. Color annotations use `// @color name #RRGGBB` and expose normalized RGB channels (0–1) as a `vec3f`. Up to 16 controls are supported. Names must be distinct WGSL identifiers, values finite, the default value within range, and step positive. Access them as `controls.name`.
 
-Rendering an edited or pasted shader preserves live values by control name. WGSL edits, annotation order, and switching between slider and knob keep your tuning. Changing one declared default applies that value to only that control; changing its minimum, maximum, or step clamps and snaps its current value to the new valid range. New or renamed controls start at their defaults, and removed controls disappear. Failed renders keep the previous live shader and controls.
+Rendering an edited or pasted shader preserves live values by control name. WGSL edits and annotation order keep your tuning. Changing a control’s type resets it to its declared default. Changing one declared default applies that value to only that control; changing its minimum, maximum, or step clamps and snaps its current value to the new valid range. New or renamed controls start at their defaults, and removed controls disappear. Failed renders keep the previous live shader and controls.
 
 **Reset** in the Controls header restores defaults from the last successfully rendered code without rendering or changing the draft. Microphone bindings remain active and can update those values again.
 

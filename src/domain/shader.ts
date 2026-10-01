@@ -3,7 +3,7 @@ import { modifyFields } from 'foldkit/struct'
 
 export const ShaderControl = Schema.Struct({
   name: Schema.String,
-  kind: Schema.Literals(['slider', 'knob']),
+  kind: Schema.Literals(['slider', 'color']),
   min: Schema.Number,
   max: Schema.Number,
   step: Schema.Number,
@@ -92,7 +92,7 @@ export const parseControls = (source: string): ParsedControls =>
     .split(/\r?\n/)
     .reduce<ParsedControls>(
       (result, line, index) => {
-        const annotation = line.match(/^\s*\/\/\s*@(slider|knob)\b(.*)$/)
+        const annotation = line.match(/^\s*\/\/\s*@(slider|color)\b(.*)$/)
         if (!annotation) {
           return result
         }
@@ -117,8 +117,13 @@ export const parseControls = (source: string): ParsedControls =>
           }),
         })
 
-        if (fields.length !== 5 || (kind !== 'slider' && kind !== 'knob')) {
-          return fail('Use // @slider name min max default step (or @knob).')
+        if (kind !== 'slider' && kind !== 'color') {
+          return result
+        }
+        if (fields.length !== (kind === 'color' ? 2 : 5)) {
+          return fail(
+            'Use // @slider name min max default step or // @color name #RRGGBB.',
+          )
         }
         if (
           !identifier.test(name) ||
@@ -130,6 +135,27 @@ export const parseControls = (source: string): ParsedControls =>
         }
         if (result.controls.some(control => control.name === name)) {
           return fail(`Control “${name}” is already declared.`)
+        }
+        if (result.controls.length >= MAX_CONTROLS) {
+          return fail(`A shader can have at most ${MAX_CONTROLS} controls.`)
+        }
+        if (kind === 'color') {
+          if (!/^#[0-9a-f]{6}$/i.test(minText)) {
+            return fail(
+              `Color “${name}” needs a six-digit hex value like #AABBCC.`,
+            )
+          }
+          return {
+            controls: result.controls.concat({
+              name,
+              kind,
+              min: 0,
+              max: 0xffffff,
+              step: 1,
+              value: Number.parseInt(minText.slice(1), 16),
+            }),
+            diagnostics: result.diagnostics,
+          }
         }
         if (
           ![minText, maxText, valueText, stepText].every(
@@ -157,9 +183,6 @@ export const parseControls = (source: string): ParsedControls =>
           return fail(
             `Control “${name}” needs min < max, a default in range, and a positive step no larger than the range.`,
           )
-        }
-        if (result.controls.length >= MAX_CONTROLS) {
-          return fail(`A shader can have at most ${MAX_CONTROLS} controls.`)
         }
 
         return {
@@ -213,7 +236,13 @@ export const reconcileControls = (
     const previous = previousValues.find(
       previous => previous.name === control.name,
     )
-    if (!definition || !previous || definition.value !== control.value) {
+    if (
+      !definition ||
+      !previous ||
+      definition.kind !== control.kind ||
+      previous.kind !== control.kind ||
+      definition.value !== control.value
+    ) {
       return control
     }
     return modifyFields(control, {
@@ -231,7 +260,12 @@ export const buildShader = (source: string) => {
   const fields = Array.match(parsed.controls, {
     onEmpty: () => '  @align(16) _unused: f32,',
     onNonEmpty: controls =>
-      controls.map(control => `  @align(16) ${control.name}: f32,`).join('\n'),
+      controls
+        .map(
+          control =>
+            `  @align(16) ${control.name}: ${control.kind === 'color' ? 'vec3f' : 'f32'},`,
+        )
+        .join('\n'),
   })
   const header = `struct Globals {
   resolution: vec2f,

@@ -199,7 +199,7 @@ export const createEditor = (
                 control => ({
                   label: `controls.${control.name}`,
                   type: 'property',
-                  detail: `${control.kind} · f32`,
+                  detail: `${control.kind} · ${control.kind === 'color' ? 'vec3f' : 'f32'}`,
                 }),
               ),
             )(context),

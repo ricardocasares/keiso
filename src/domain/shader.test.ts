@@ -12,13 +12,15 @@ import {
 describe('shader controls', () => {
   test('parses ordered controls, decimal exponents, and Unicode WGSL names', () => {
     expect(
-      parseControls('// @slider speed 0 3 1 1e-2\n// @knob lumière -1 1 .5 .1'),
+      parseControls(
+        '// @slider speed 0 3 1 1e-2\n// @slider lumière -1 1 .5 .1',
+      ),
     ).toStrictEqual({
       controls: [
         { name: 'speed', kind: 'slider', min: 0, max: 3, value: 1, step: 0.01 },
         {
           name: 'lumière',
-          kind: 'knob',
+          kind: 'slider',
           min: -1,
           max: 1,
           value: 0.5,
@@ -30,6 +32,11 @@ describe('shader controls', () => {
   })
 
   test.each([
+    '// @color sky #abc',
+    '// @color sky #GGHHII',
+    '// @color sky AABBCC',
+    '// @color sky #AABBCC extra',
+    '// @color var #AABBCC',
     '// @slider speed 0 3 1',
     '// @slider speed 0 3 1 .1 extra',
     '// @slider 2speed 0 3 1 .1',
@@ -62,7 +69,7 @@ describe('shader controls', () => {
 
   test('rejects duplicate names and limits the uniform layout', () => {
     const duplicate = parseControls(
-      '// @slider speed 0 3 1 .1\n// @knob speed 0 3 2 .1',
+      '// @slider speed 0 3 1 .1\n// @slider speed 0 3 2 .1',
     )
     expect(duplicate.controls).toHaveLength(1)
     expect(duplicate.diagnostics[0]?.line).toBe(2)
@@ -79,7 +86,7 @@ describe('shader controls', () => {
     const parsed = parseControls(`/*
 // @slider speed 0 3 2 .1
 /* nested
-// @knob hidden 0 1 .5 .1
+// @slider hidden 0 1 .5 .1
 */
 // @slider malformed
 */
@@ -107,7 +114,7 @@ describe('shader controls', () => {
 
   test('maps user line numbers exactly and pads control fields to 16 bytes', () => {
     const source =
-      '// @knob speed 0 3 1 .1\nfn fragment(uv: vec2f) -> vec4f {\n  return vec4f(uv, 0.0, 1.0);\n}'
+      '// @slider speed 0 3 1 .1\nfn fragment(uv: vec2f) -> vec4f {\n  return vec4f(uv, 0.0, 1.0);\n}'
     const shader = buildShader(source)
     expect(
       shader.code
@@ -132,7 +139,7 @@ describe('shader controls', () => {
 
 describe('control reconciliation', () => {
   const definitions = parseControls(
-    '// @slider speed 0 3 1 .1\n// @knob intensity 0 2 .5 .01',
+    '// @slider speed 0 3 1 .1\n// @slider intensity 0 2 .5 .01',
   ).controls
   const values = definitions.map(control =>
     modifyFields(control, {
@@ -142,7 +149,7 @@ describe('control reconciliation', () => {
 
   test('keeps current values through code, presentation, order, and numeric formatting changes', () => {
     const controls = parseControls(
-      '// @slider intensity 0.0 2.0 5e-1 1e-2\n// @knob speed 0 3 1.0 .1\nfn fragment() {}',
+      '// @slider intensity 0.0 2.0 5e-1 1e-2\n// @slider speed 0 3 1.0 .1\nfn fragment() {}',
     ).controls
     expect(reconcileControls(controls, definitions, values)).toStrictEqual([
       modifyFields(controls[0]!, { value: () => 1.7 }),
@@ -152,14 +159,14 @@ describe('control reconciliation', () => {
 
   test('applies only the edited default and initializes added or renamed controls', () => {
     const controls = parseControls(
-      '// @slider speed 0 3 1.5 .1\n// @knob intensity 0 2 .5 .01\n// @knob renamed 0 3 .8 .1',
+      '// @slider speed 0 3 1.5 .1\n// @slider intensity 0 2 .5 .01\n// @slider renamed 0 3 .8 .1',
     ).controls
     expect(
       reconcileControls(controls, definitions, values).map(
         control => control.value,
       ),
     ).toStrictEqual([1.5, 1.7, 0.8])
-    const removed = parseControls('// @knob renamed 0 3 .8 .1').controls
+    const removed = parseControls('// @slider renamed 0 3 .8 .1').controls
     expect(reconcileControls(removed, definitions, values)).toStrictEqual(
       removed,
     )
@@ -230,4 +237,27 @@ describe('control reconciliation', () => {
       ).toBe(expected)
     },
   )
+})
+
+test('colors expose RGB uniforms and retain edits until defaults or kinds change', () => {
+  const source = '// @color sky #AABBCC\n// @slider speed 0 3 1 .1'
+  const shader = buildShader(source)
+  expect(shader.diagnostics).toEqual([])
+  expect(shader.code).toContain('@align(16) sky: vec3f,')
+  expect(shader.controls[0]).toMatchObject({ kind: 'color', value: 0xaabbcc })
+  const tuned = shader.controls.map(control =>
+    modifyFields(control, { value: () => 0x123456 }),
+  )
+  expect(
+    reconcileControls(shader.controls, shader.controls, tuned)[0]?.value,
+  ).toBe(0x123456)
+  const changed = parseControls('// @color sky #112233').controls
+  expect(reconcileControls(changed, shader.controls, tuned)).toEqual(changed)
+  const slider = parseControls('// @slider sky 0 16777215 11189196 1').controls
+  expect(reconcileControls(slider, shader.controls, tuned)).toEqual(slider)
+  expect(parseControls('// @knob old 0 1 .5 .1').controls).toEqual([])
+  expect(
+    parseControls('// @slider sky 0 1 .5 .1\n// @color sky #AABBCC')
+      .diagnostics,
+  ).toHaveLength(1)
 })

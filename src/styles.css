@@ -37,17 +37,6 @@
   }
 }
 
-.knob {
-  background: conic-gradient(
-    from 225deg,
-    #beabf0 0deg var(--sweep),
-    #33323c var(--sweep) 270deg,
-    transparent 270deg
-  );
-}
-.knob-cap {
-  background: radial-gradient(circle at 30% 20%, #36373d, #1b1d22);
-}
 .shader-range {
   appearance: none;
   width: 100%;

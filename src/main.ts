@@ -392,10 +392,14 @@ const completedRender =
       spectrumDrag: () => SpectrumDrag.Idle(),
       maybeLive: () => Option.some(snapshot),
       microphoneBindings: Array.filter(binding =>
-        snapshot.controls.some(control => control.name === binding.name),
+        snapshot.controls.some(
+          control => control.name === binding.name && control.kind === 'slider',
+        ),
       ),
       maybeSelectedControl: Option.filter(name =>
-        snapshot.controls.some(control => control.name === name),
+        snapshot.controls.some(
+          control => control.name === name && control.kind === 'slider',
+        ),
       ),
     })
     if (model.mode === 'projection') {
@@ -518,7 +522,13 @@ const updateControl =
           control.name === name
             ? modifyFields(control, {
                 value: () =>
-                  Math.min(control.max, Math.max(control.min, value)),
+                  Math.min(
+                    control.max,
+                    Math.max(
+                      control.min,
+                      control.kind === 'color' ? Math.round(value) : value,
+                    ),
+                  ),
               })
             : control,
         )
@@ -526,7 +536,9 @@ const updateControl =
 const hasLiveControl = (model: Model, name: string): boolean =>
   model.mode === 'control' &&
   Option.exists(model.maybeLive, live =>
-    live.controls.some(control => control.name === name),
+    live.controls.some(
+      control => control.name === name && control.kind === 'slider',
+    ),
   )
 
 const updateBinding = (
@@ -645,7 +657,7 @@ const updateMicrophoneSpectrum = (
     const binding = model.microphoneBindings.find(
       binding => binding.name === control.name,
     )
-    if (!binding) {
+    if (!binding || control.kind === 'color') {
       return control
     }
     const level = bandLevel(spectrum, binding.bands, binding.gain)

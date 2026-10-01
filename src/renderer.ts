@@ -162,9 +162,22 @@ export const createRenderer = async (
         const value =
           controls.find(control => control.name === definition.name)?.value ??
           definition.value
-        controlValues[index * 4] = Number.isFinite(value)
+        const bounded = Number.isFinite(value)
           ? Math.min(definition.max, Math.max(definition.min, value))
           : definition.value
+        if (definition.kind === 'color') {
+          const rgb = Math.round(bounded)
+          controlValues.set(
+            [
+              ((rgb >> 16) & 255) / 255,
+              ((rgb >> 8) & 255) / 255,
+              (rgb & 255) / 255,
+            ],
+            index * 4,
+          )
+        } else {
+          controlValues[index * 4] = bounded
+        }
       })
       device.queue.writeBuffer(controlsBuffer, 0, controlValues)
     }

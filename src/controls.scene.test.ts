@@ -6,6 +6,7 @@ import {
   click,
   expect,
   given,
+  label,
   role,
   scene,
   type,
@@ -28,12 +29,15 @@ import {
 } from './main'
 import { Message } from './message'
 
-test('Reset restores live defaults through the controls toolbar', () => {
-  const initialModel = init({
+test('Slider and color inputs sync live values and Reset restores defaults', () => {
+  const baseModel = init({
     mode: 'control',
     sessionId: 'controls-scene',
     startedAt: 1000,
   }).model
+  const initialModel = modifyFields(baseModel, {
+    source: source => '// @color sky #AABBCC\n' + source,
+  })
   const snapshot = Snapshot.make({
     source: initialModel.source,
     controls: parseControls(initialModel.source).controls,
@@ -48,7 +52,15 @@ test('Reset restores live defaults through the controls toolbar', () => {
     ),
     revision: () => 2,
   })
-  const resetSnapshot = modifyFields(snapshot, { revision: () => 3 })
+  const colorSnapshot = modifyFields(tunedSnapshot, {
+    controls: Array.map(control =>
+      control.name === 'sky'
+        ? modifyFields(control, { value: () => 0x123456 })
+        : control,
+    ),
+    revision: () => 3,
+  })
+  const resetSnapshot = modifyFields(snapshot, { revision: () => 4 })
   const resetButton = role('button', {
     name: 'Reset controls to code defaults',
   })
@@ -82,6 +94,19 @@ test('Reset restores live defaults through the controls toolbar', () => {
       [BroadcastState, Message.CompletedBroadcastState()],
     ),
     expect(role('slider', { name: 'speed' })).toHaveValue('2.4'),
+    expect(label('sky')).toHaveValue('#aabbcc'),
+    type(label('sky'), '#123456'),
+    Command.expectExact(
+      SyncControls({ snapshot: colorSnapshot }),
+      BroadcastState({
+        broadcast: Broadcast.State({ snapshot: colorSnapshot }),
+      }),
+    ),
+    Command.resolveAll(
+      [SyncControls, Message.CompletedSyncControls()],
+      [BroadcastState, Message.CompletedBroadcastState()],
+    ),
+    expect(label('sky')).toHaveValue('#123456'),
     Subscription.emit(
       Message.UpdatedSource({
         source: snapshot.source.replace('speed 0 3 0.7', 'speed 0 3 1.2'),
@@ -99,6 +124,7 @@ test('Reset restores live defaults through the controls toolbar', () => {
       [BroadcastState, Message.CompletedBroadcastState()],
     ),
     expect(role('slider', { name: 'speed' })).toHaveValue('0.7'),
+    expect(label('sky')).toHaveValue('#aabbcc'),
     Command.expectNone(),
   )
 })

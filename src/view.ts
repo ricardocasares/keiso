@@ -364,7 +364,7 @@ const controlView = (
   })
   return h.keyed('li')(
     control.name,
-    [h.Class('min-w-0')],
+    [h.Class('flex h-[112px] min-w-0 flex-col')],
     [
       h.div(
         [h.Class('mb-2 flex items-center justify-between gap-1.5 text-[11px]')],
@@ -384,46 +384,30 @@ const controlView = (
                 'rounded-[2px] bg-[#24202e] px-1 py-0.5 font-mono text-[10px] text-[#d3c3fc]',
               ),
             ],
-            [Number(control.value.toPrecision(6)).toString()],
+            [
+              control.kind === 'color'
+                ? `#${control.value.toString(16).padStart(6, '0').toUpperCase()}`
+                : Number(control.value.toPrecision(6)).toString(),
+            ],
           ),
         ],
       ),
-      control.kind === 'knob'
-        ? h.div(
-            [
-              h.Class('knob mx-auto mb-2 size-[42px] rounded-full p-[3px]'),
-              h.AriaHidden(true),
-              h.Style({
-                '--turn': `${-135 + proportion * 270}deg`,
-                '--sweep': `${proportion * 270}deg`,
-              }),
-            ],
-            [
-              h.div(
-                [
-                  h.Class(
-                    'knob-cap relative size-full rotate-(--turn) rounded-full border-[3px] border-panel shadow-[0_3px_9px_#0007]',
-                  ),
-                ],
-                [
-                  h.span([
-                    h.Class(
-                      'absolute top-1 left-[calc(50%-1px)] h-[9px] w-0.5 rounded-[2px] bg-[#ccbcf8]',
-                    ),
-                  ]),
-                ],
-              ),
-            ],
-          )
-        : h.empty,
       h.input([
         h.Id(`control-${control.name}`),
-        h.Type('range'),
-        h.Class('shader-range'),
+        h.Type(control.kind === 'color' ? 'color' : 'range'),
+        h.Class(
+          control.kind === 'color'
+            ? 'h-6 w-full cursor-pointer border-0 bg-transparent p-0'
+            : 'shader-range',
+        ),
         h.Min(String(control.min)),
         h.Max(String(control.max)),
         h.Step(String(control.step)),
-        h.Value(String(control.value)),
+        h.Value(
+          control.kind === 'color'
+            ? `#${control.value.toString(16).padStart(6, '0')}`
+            : String(control.value),
+        ),
         h.Disabled(
           model.render._tag === 'Compiling' ||
             model.engine._tag !== 'Ready' ||
@@ -431,28 +415,47 @@ const controlView = (
         ),
         h.Style({ '--range': `${proportion * 100}%` }),
         h.OnInput(value =>
-          Message.UpdatedControl({ name: control.name, value: Number(value) }),
+          Message.UpdatedControl({
+            name: control.name,
+            value:
+              control.kind === 'color'
+                ? /^#[0-9a-f]{6}$/i.test(value)
+                  ? Number.parseInt(value.slice(1), 16)
+                  : Number.NaN
+                : Number(value),
+          }),
         ),
       ]),
-      h.div(
-        [h.Class('flex justify-between font-mono text-[9px] text-[#686d76]')],
-        [h.span([], [String(control.min)]), h.span([], [String(control.max)])],
-      ),
-      h.button(
-        [
-          h.Type('button'),
-          h.Class(
-            `mt-2 w-full truncate rounded border px-1.5 py-1 text-left text-[10px] ${isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
+      control.kind === 'color'
+        ? h.empty
+        : h.div(
+            [
+              h.Class(
+                'flex justify-between font-mono text-[9px] text-[#686d76]',
+              ),
+            ],
+            [
+              h.span([], [String(control.min)]),
+              h.span([], [String(control.max)]),
+            ],
           ),
-          h.AriaLabel(`Input for ${control.name}`),
-          h.AriaExpanded(isSelected),
-          h.Id(`control-input-${control.name}`),
-          h.AriaControls(`control-input-editor-${control.name}`),
-          h.Title(inputLabel),
-          h.OnClick(Message.ClickedControlInput({ name: control.name })),
-        ],
-        [inputLabel],
-      ),
+      control.kind === 'color'
+        ? h.empty
+        : h.button(
+            [
+              h.Type('button'),
+              h.Class(
+                `mt-auto w-full truncate rounded border px-1.5 py-1 text-left text-[10px] ${isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
+              ),
+              h.AriaLabel(`Input for ${control.name}`),
+              h.AriaExpanded(isSelected),
+              h.Id(`control-input-${control.name}`),
+              h.AriaControls(`control-input-editor-${control.name}`),
+              h.Title(inputLabel),
+              h.OnClick(Message.ClickedControlInput({ name: control.name })),
+            ],
+            [inputLabel],
+          ),
     ],
   )
 }
@@ -844,13 +847,13 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
                         'overflow-auto px-3 py-4 text-[12px] text-[#7e8590]',
                       ),
                     ],
-                    ['Add an @slider or @knob annotation to expose a control.'],
+                    ['Add a @slider or @color annotation to expose a control.'],
                   ),
                 onNonEmpty: controls =>
                   h.ul(
                     [
                       h.Class(
-                        'grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] items-start gap-4 p-3 max-[1000px]:gap-3',
+                        'grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] items-stretch gap-4 p-3 max-[1000px]:gap-3',
                       ),
                     ],
                     controls.map(control => controlView(control, model, h)),
@@ -970,7 +973,7 @@ const helpView = (h: HtmlBuilder<Message>): Html =>
           ),
         ],
         [
-          '// @slider speed 0 3 1 0.01\n// @knob intensity 0 2 1 0.01\n\nfn fragment(uv: vec2f) -> vec4f {\n  return vec4f(uv, sin(globals.time * controls.speed), 1.0);\n}',
+          '// @slider speed 0 3 1 0.01\n// @color sky #AABBCC\n\nfn fragment(uv: vec2f) -> vec4f {\n  return vec4f(controls.sky * (0.5 + 0.5 * sin(globals.time * controls.speed)), 1.0);\n}',
         ],
       ),
       h.p(
