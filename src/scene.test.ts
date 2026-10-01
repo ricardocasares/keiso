@@ -82,7 +82,7 @@ const focusExampleButton = Command.resolve(
 );
 
 describe("control window", () => {
-  test("starts with an editor, output, a render shortcut, and a keyboard-accessible example picker", () => {
+  test("starts with an editor, output, a render button, and a keyboard-accessible example picker", () => {
     scene(
       { update, view },
       given(initialModel),
@@ -90,7 +90,7 @@ describe("control window", () => {
       expect(role("region", { name: "Shader editor" })).toExist(),
       expect(role("region", { name: "Live output" })).toExist(),
       expect(text("⌘+Enter")).toExist(),
-      expect(role("button", { name: "Render shader" })).toBeAbsent(),
+      expect(role("button", { name: "Render shader" })).toBeDisabled(),
       expect(role("button", { name: "Projection ↗" })).toBeDisabled(),
       expect(role("button", { name: "Shader examples" })).toExist(),
       expect(role("listbox")).toBeAbsent(),
@@ -102,6 +102,7 @@ describe("control window", () => {
       Command.expectExact(RenderShader({ snapshot })),
       renderInitialShader,
       acknowledgeRender,
+      expect(role("button", { name: "Render shader" })).toBeEnabled(),
       expect(role("slider", { name: "speed" })).toExist(),
       expect(text("Draft is live")).toExist(),
       keydown(role("button", { name: "Shader examples" }), "ArrowDown"),
@@ -156,8 +157,9 @@ describe("control window", () => {
       acknowledgeRender,
       Mount.resolve(MountEditor, Message.UpdatedSource({ source })),
       expect(text("Live shader protected · unpublished edits")).toExist(),
-      Subscription.emit(Message.PressedRender()),
+      click(role("button", { name: "Render shader" })),
       Command.expectExact(RenderShader({ snapshot: rejectedSnapshot })),
+      expect(role("button", { name: "Render shader" })).toBeDisabled(),
       expect(role("slider", { name: "speed" })).toBeDisabled(),
       Command.resolve(
         RenderShader,
@@ -167,6 +169,7 @@ describe("control window", () => {
         }),
       ),
       Command.resolve(ShowDiagnostics, Message.CompletedShowDiagnostics()),
+      expect(role("button", { name: "Render shader" })).toBeEnabled(),
       expect(
         text("Render rejected. The last good shader is still live."),
       ).toExist(),
@@ -229,6 +232,7 @@ describe("control window", () => {
       expect(text("No WebGPU adapter is available.")).toExist(),
       Subscription.emit(Message.PressedRender()),
       Command.expectNone(),
+      expect(role("button", { name: "Render shader" })).toBeDisabled(),
       expect(role("button", { name: "Projection ↗" })).toBeDisabled(),
     );
   });

@@ -155,7 +155,27 @@ const editorView = (model: Model, h: HtmlBuilder<Message>): Html =>
               'WGSL',
             ],
           ),
-          h.kbd([h.Class('text-[#85838e]')], ['⌘+Enter']),
+          Button.view(
+            {
+              onClick: Message.PressedRender(),
+              isDisabled:
+                model.engine._tag !== 'Ready' ||
+                model.render._tag === 'Compiling',
+              toView: attributes =>
+                h.button(
+                  [
+                    ...attributes.button,
+                    h.AriaLabel('Render shader'),
+                    h.Title('Render shader (⌘+Enter)'),
+                    h.Class(
+                      'rounded-[3px] border border-[#3b3d43] bg-[#1c1e21] px-2 py-1 text-[#c6b8ff] transition-colors hover:bg-[#2b2b32] data-disabled:cursor-not-allowed data-disabled:opacity-40',
+                    ),
+                  ],
+                  [h.kbd([], ['⌘+Enter'])],
+                ),
+            },
+            h,
+          ),
         ],
       ),
     ],
