@@ -1,15 +1,25 @@
 import { Array, Clock, Effect, Option, Schema } from 'effect'
-import { Command, type Runtime, Update } from 'foldkit'
+import { Command, Dom, type Runtime, Update } from 'foldkit'
 import { modifyFields } from 'foldkit/struct'
 
 import { Listbox } from '@foldkit/ui'
 
+import { bandLevel, bandsInRange, spectrumBands } from './audio'
 import { Broadcast, Snapshot } from './domain/session'
-import { Diagnostic, parseControls } from './domain/shader'
+import { Diagnostic, type ShaderControl, parseControls } from './domain/shader'
 import { shaderExamples } from './examples'
 import { channel, editor, errorReason, renderer } from './host'
 import { Message } from './message'
-import { EngineState, Flags, Model, RenderState, Validation } from './model'
+import {
+  EngineState,
+  Flags,
+  type MicrophoneBinding,
+  MicrophoneState,
+  Model,
+  RenderState,
+  SpectrumDrag,
+  Validation,
+} from './model'
 import { ExampleListbox } from './view'
 
 export { Message } from './message'
@@ -50,6 +60,12 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     maybeNotice: Option.none(),
     projectionStatus: 'Output ready to connect',
     isHelpOpen: false,
+    microphone: MicrophoneState.Idle(),
+    microphoneSession: 0,
+    microphoneBindings: [],
+    maybeSelectedControl: Option.none(),
+    spectrum: [],
+    spectrumDrag: SpectrumDrag.Idle(),
   }),
 })
 
@@ -184,6 +200,16 @@ export const FocusDiagnostic = Command.define('FocusDiagnostic', {
       Effect.flatMap(value => Effect.try(() => value.focusLine(line, column))),
       Effect.ignore,
       Effect.as(Message.CompletedFocusDiagnostic()),
+    ),
+})
+
+export const FocusControlInput = Command.define('FocusControlInput', {
+  args: { name: Schema.String },
+  messages: [Message.CompletedFocusControlInput],
+  execute: ({ name }) =>
+    Dom.focus(`#control-input-${name}`).pipe(
+      Effect.ignore,
+      Effect.as(Message.CompletedFocusControlInput()),
     ),
 })
 
@@ -355,7 +381,14 @@ const completedRender =
       }
     }
     const liveModel = modifyFields(completedModel, {
+      spectrumDrag: () => SpectrumDrag.Idle(),
       maybeLive: () => Option.some(snapshot),
+      microphoneBindings: Array.filter(binding =>
+        snapshot.controls.some(control => control.name === binding.name),
+      ),
+      maybeSelectedControl: Option.filter(name =>
+        snapshot.controls.some(control => control.name === name),
+      ),
     })
     if (model.mode === 'projection') {
       return Option.match(model.maybeIncoming, {
@@ -375,8 +408,25 @@ const completedRender =
               },
       })
     }
+    const maybeExampleBindings = Option.exists(
+      model.maybeLive,
+      live => live.source === snapshot.source,
+    )
+      ? Option.none()
+      : Option.fromNullishOr(
+          shaderExamples.find(example => example.source === snapshot.source)
+            ?.microphoneBindings,
+        )
     return {
-      model: liveModel,
+      model: Option.match(maybeExampleBindings, {
+        onNone: () => liveModel,
+        onSome: bindings =>
+          modifyFields(liveModel, {
+            microphoneBindings: () => bindings.slice(),
+            maybeSelectedControl: () =>
+              Option.map(Array.head(bindings), binding => binding.name),
+          }),
+      }),
       commands: [
         BroadcastState({ broadcast: Broadcast.State({ snapshot }) }),
         ShowDiagnostics({ source: snapshot.source, diagnostics }),
@@ -410,44 +460,213 @@ const receiveBroadcast =
           : { model },
     })
 
+const syncControlValues = (
+  model: Model,
+  toControl: (control: ShaderControl) => ShaderControl,
+): UpdateReturn => {
+  if (
+    model.mode !== 'control' ||
+    model.engine._tag !== 'Ready' ||
+    model.render._tag === 'Compiling'
+  ) {
+    return { model }
+  }
+  return Option.match(model.maybeLive, {
+    onNone: () => ({ model }),
+    onSome: live => {
+      const controls = live.controls.map(toControl)
+      if (
+        controls.every(
+          (control, index) => control.value === live.controls[index]?.value,
+        )
+      ) {
+        return { model }
+      }
+      const snapshot = modifyFields(live, {
+        controls: () => controls,
+        revision: revision => revision + 1,
+      })
+      return {
+        model: modifyFields(model, {
+          maybeLive: () => Option.some(snapshot),
+        }),
+        commands: [
+          SyncControls({ snapshot }),
+          BroadcastState({ broadcast: Broadcast.State({ snapshot }) }),
+        ],
+      }
+    },
+  })
+}
+
 const updateControl =
   (model: Model) =>
-  ({ name, value }: typeof Message.UpdatedControl.Type): UpdateReturn => {
-    if (!Number.isFinite(value) || model.render._tag === 'Compiling') {
-      return { model }
-    }
-    return Option.match(model.maybeLive, {
-      onNone: () => ({ model }),
-      onSome: live => {
-        const snapshot = modifyFields(live, {
-          controls: Array.map(control =>
-            control.name === name
-              ? modifyFields(control, {
-                  value: () =>
-                    Math.min(control.max, Math.max(control.min, value)),
-                })
-              : control,
-          ),
-          revision: revision => revision + 1,
-        })
-        return {
-          model: modifyFields(model, {
-            maybeLive: () => Option.some(snapshot),
-          }),
-          commands: [
-            SyncControls({ snapshot }),
-            BroadcastState({ broadcast: Broadcast.State({ snapshot }) }),
-          ],
-        }
-      },
-    })
+  ({ name, value }: typeof Message.UpdatedControl.Type): UpdateReturn =>
+    !Number.isFinite(value) ||
+    (model.microphone._tag === 'Ready' &&
+      model.microphoneBindings.some(binding => binding.name === name))
+      ? { model }
+      : syncControlValues(model, control =>
+          control.name === name
+            ? modifyFields(control, {
+                value: () =>
+                  Math.min(control.max, Math.max(control.min, value)),
+              })
+            : control,
+        )
+
+const hasLiveControl = (model: Model, name: string): boolean =>
+  model.mode === 'control' &&
+  Option.exists(model.maybeLive, live =>
+    live.controls.some(control => control.name === name),
+  )
+
+const updateBinding = (
+  model: Model,
+  name: string,
+  toBinding: (binding: MicrophoneBinding) => MicrophoneBinding,
+): UpdateReturn => ({
+  model: modifyFields(model, {
+    spectrumDrag: () => SpectrumDrag.Idle(),
+    microphoneBindings: Array.map(binding =>
+      binding.name === name ? toBinding(binding) : binding,
+    ),
+  }),
+})
+
+const selectControlBand = (
+  model: Model,
+  name: string,
+  low: number,
+  high: number,
+): UpdateReturn =>
+  !Number.isFinite(low) ||
+  !Number.isFinite(high) ||
+  low < 20 ||
+  high > 20000 ||
+  low >= high
+    ? { model }
+    : updateBinding(model, name, binding =>
+        modifyFields(binding, {
+          bands: bands => {
+            const preset = bandsInRange(low, high)
+            return preset.every(index => bands.includes(index))
+              ? bands.filter(index => !preset.includes(index))
+              : bands.concat(preset.filter(index => !bands.includes(index)))
+          },
+        }),
+      )
+
+const validSpectrumIndex = (index: number): boolean =>
+  Number.isInteger(index) && index >= 0 && index < spectrumBands.length
+
+const startSpectrumSelection = (model: Model, index: number): UpdateReturn => {
+  if (!validSpectrumIndex(index) || model.spectrumDrag._tag === 'Dragging') {
+    return { model }
   }
+  return Option.match(model.maybeSelectedControl, {
+    onNone: () => ({ model }),
+    onSome: name => {
+      const binding = model.microphoneBindings.find(
+        binding => binding.name === name,
+      )
+      if (!binding) {
+        return { model }
+      }
+      const selection = binding.bands.includes(index) ? 'remove' : 'add'
+      const dragModel = modifyFields(model, {
+        spectrumDrag: () =>
+          SpectrumDrag.Dragging({ name, lastIndex: index, selection }),
+      })
+      return moveSpectrumSelection(dragModel, index)
+    },
+  })
+}
+
+const moveSpectrumSelection = (model: Model, index: number): UpdateReturn => {
+  if (!validSpectrumIndex(index)) {
+    return { model }
+  }
+  return SpectrumDrag.match(model.spectrumDrag, {
+    Idle: () => ({ model }),
+    Dragging: ({ name, lastIndex, selection }) => {
+      const first = Math.min(lastIndex, index)
+      const last = Math.max(lastIndex, index)
+      const crossed = Array.range(first, last)
+      return {
+        model: modifyFields(model, {
+          spectrumDrag: () =>
+            SpectrumDrag.Dragging({ name, lastIndex: index, selection }),
+          microphoneBindings: Array.map(binding =>
+            binding.name !== name
+              ? binding
+              : modifyFields(binding, {
+                  bands: bands =>
+                    selection === 'add'
+                      ? bands.concat(
+                          crossed.filter(band => !bands.includes(band)),
+                        )
+                      : bands.filter(band => band < first || band > last),
+                }),
+          ),
+        }),
+      }
+    },
+  })
+}
+
+const microphoneIsCurrent = (model: Model, sessionId: number): boolean =>
+  model.mode === 'control' &&
+  model.microphoneSession === sessionId &&
+  (model.microphone._tag === 'Starting' || model.microphone._tag === 'Ready')
+
+const updateMicrophoneSpectrum = (
+  model: Model,
+  { sessionId, spectrum }: typeof Message.UpdatedMicrophoneSpectrum.Type,
+): UpdateReturn => {
+  if (
+    !microphoneIsCurrent(model, sessionId) ||
+    model.microphone._tag !== 'Ready' ||
+    spectrum.length !== spectrumBands.length ||
+    spectrum.some(value => !Number.isFinite(value) || value < 0 || value > 1)
+  ) {
+    return { model }
+  }
+  const spectrumModel = modifyFields(model, { spectrum: () => spectrum })
+  return syncControlValues(spectrumModel, control => {
+    const binding = model.microphoneBindings.find(
+      binding => binding.name === control.name,
+    )
+    if (!binding) {
+      return control
+    }
+    const level = bandLevel(spectrum, binding.bands, binding.gain)
+    const value = control.min + level * (control.max - control.min)
+    return modifyFields(control, {
+      value: () =>
+        Math.min(
+          control.max,
+          Math.max(
+            control.min,
+            Number(
+              (
+                control.min +
+                Math.round((value - control.min) / control.step) * control.step
+              ).toPrecision(6),
+            ),
+          ),
+        ),
+    })
+  })
+}
 
 const rendererFailed =
   (model: Model) =>
   ({ reason }: { reason: string }): UpdateReturn => {
     const failedModel = modifyFields(model, {
       engine: () => EngineState.Failed({ reason }),
+      microphone: () => MicrophoneState.Idle(),
+      spectrum: () => [],
     })
     return model.mode === 'projection'
       ? {
@@ -526,6 +745,110 @@ export const update = (model: Model, message: Message) =>
           },
     CompletedRenderShader: completedRender(model),
     UpdatedControl: updateControl(model),
+    ClickedControlInput: ({ name }) =>
+      !hasLiveControl(model, name)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              spectrumDrag: () => SpectrumDrag.Idle(),
+              maybeSelectedControl: selected =>
+                Option.contains(selected, name)
+                  ? Option.none()
+                  : Option.some(name),
+            }),
+          },
+    ClosedControlInput: () =>
+      Option.match(model.maybeSelectedControl, {
+        onNone: () => ({ model }),
+        onSome: name => ({
+          model: modifyFields(model, {
+            spectrumDrag: () => SpectrumDrag.Idle(),
+            maybeSelectedControl: () => Option.none(),
+          }),
+          commands: [FocusControlInput({ name })],
+        }),
+      }),
+    CompletedFocusControlInput: () => ({ model }),
+    SelectedControlInput: ({ name, input }) =>
+      !hasLiveControl(model, name)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              spectrumDrag: () => SpectrumDrag.Idle(),
+              microphoneBindings: bindings =>
+                input === 'manual'
+                  ? bindings.filter(binding => binding.name !== name)
+                  : bindings.some(binding => binding.name === name)
+                    ? bindings
+                    : bindings.concat({
+                        name,
+                        bands: bandsInRange(20, 250),
+                        gain: 1,
+                      }),
+            }),
+          },
+    SelectedControlBand: ({ name, low, high }) =>
+      selectControlBand(model, name, low, high),
+    ClickedSpectrumBand: ({ name, index }) =>
+      !validSpectrumIndex(index)
+        ? { model }
+        : updateBinding(model, name, binding =>
+            modifyFields(binding, {
+              bands: bands =>
+                bands.includes(index)
+                  ? bands.filter(band => band !== index)
+                  : bands.concat(index),
+            }),
+          ),
+    StartedSpectrumSelection: ({ index }) =>
+      startSpectrumSelection(model, index),
+    MovedSpectrumSelection: ({ index }) => moveSpectrumSelection(model, index),
+    EndedSpectrumSelection: () => ({
+      model: modifyFields(model, { spectrumDrag: () => SpectrumDrag.Idle() }),
+    }),
+    UpdatedControlGain: ({ name, gain }) =>
+      !Number.isFinite(gain) || gain < 0.1 || gain > 8
+        ? { model }
+        : updateBinding(model, name, binding =>
+            modifyFields(binding, { gain: () => gain }),
+          ),
+    ClickedStartMicrophone: () =>
+      model.mode !== 'control' ||
+      model.microphone._tag === 'Starting' ||
+      model.microphone._tag === 'Ready'
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              microphone: () => MicrophoneState.Starting(),
+              microphoneSession: session => session + 1,
+              spectrum: () => [],
+            }),
+          },
+    ClickedStopMicrophone: () => ({
+      model: modifyFields(model, {
+        microphone: () => MicrophoneState.Idle(),
+        spectrum: () => [],
+      }),
+    }),
+    SucceededStartMicrophone: ({ sessionId }) =>
+      !microphoneIsCurrent(model, sessionId)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              microphone: () => MicrophoneState.Ready(),
+            }),
+          },
+    FailedMicrophone: ({ sessionId, reason }) =>
+      !microphoneIsCurrent(model, sessionId)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              microphone: () => MicrophoneState.Failed({ reason }),
+              spectrum: () => [],
+            }),
+          },
+    UpdatedMicrophoneSpectrum: payload =>
+      updateMicrophoneSpectrum(model, payload),
     ReceivedBroadcast: receiveBroadcast(model),
     CompletedSyncControls: () => ({ model }),
     FailedSyncControls: ({ reason }) => notice(model, reason),

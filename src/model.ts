@@ -16,6 +16,26 @@ export const Validation = defineTaggedUnion({
   Checked: { diagnostics: Schema.Array(Diagnostic) },
 })
 export const RenderState = defineTaggedUnion({ Idle: {}, Compiling: {} })
+export const MicrophoneState = defineTaggedUnion({
+  Idle: {},
+  Starting: {},
+  Ready: {},
+  Failed: { reason: Schema.String },
+})
+export const MicrophoneBinding = Schema.Struct({
+  name: Schema.String,
+  bands: Schema.Array(Schema.Natural),
+  gain: Schema.Number,
+})
+export type MicrophoneBinding = typeof MicrophoneBinding.Type
+export const SpectrumDrag = defineTaggedUnion({
+  Idle: {},
+  Dragging: {
+    name: Schema.String,
+    lastIndex: Schema.Natural,
+    selection: Schema.Literals(['add', 'remove']),
+  },
+})
 export const Flags = Schema.Struct({
   mode: Schema.Literals(['control', 'projection']),
   sessionId: Schema.String,
@@ -37,5 +57,11 @@ export const Model = Schema.Struct({
   maybeNotice: Schema.Option(Schema.String),
   projectionStatus: Schema.String,
   isHelpOpen: Schema.Boolean,
+  microphone: MicrophoneState,
+  microphoneSession: Schema.Natural,
+  microphoneBindings: Schema.Array(MicrophoneBinding),
+  maybeSelectedControl: Schema.Option(Schema.String),
+  spectrum: Schema.Array(Schema.Number),
+  spectrumDrag: SpectrumDrag,
 })
 export type Model = typeof Model.Type

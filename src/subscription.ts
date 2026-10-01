@@ -1,11 +1,30 @@
 import { Effect, Option, Schema, Stream } from 'effect'
 import { Subscription } from 'foldkit'
 
+import { streamMicrophone } from './audio'
 import { errorReason, renderer, streamChannel } from './host'
 import { Message } from './message'
 import type { Model } from './model'
 
 export const subscriptions = Subscription.make<Model, Message>()(entry => ({
+  microphone: entry(
+    { maybeSession: Schema.Option(Schema.Number) },
+    {
+      modelToDependencies: model => ({
+        maybeSession:
+          model.mode === 'control' &&
+          (model.microphone._tag === 'Starting' ||
+            model.microphone._tag === 'Ready')
+            ? Option.some(model.microphoneSession)
+            : Option.none(),
+      }),
+      dependenciesToStream: ({ maybeSession }) =>
+        Option.match(maybeSession, {
+          onNone: () => Stream.empty,
+          onSome: streamMicrophone,
+        }),
+    },
+  ),
   channel: entry(
     {
       sessionId: Schema.String,

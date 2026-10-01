@@ -3,11 +3,19 @@ import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
 import { Button, Listbox } from '@foldkit/ui'
 
+import { bandsInRange, spectrumBands } from './audio'
 import type { Diagnostic, ShaderControl } from './domain/shader'
 import { type ShaderExample, shaderExamples } from './examples'
 import { MountEditor, MountRenderer } from './host'
 import { Message } from './message'
-import { EngineState, type Model, Validation } from './model'
+import {
+  EngineState,
+  type MicrophoneBinding,
+  MicrophoneState,
+  type Model,
+  Validation,
+} from './model'
+import { MountSpectrumSelection } from './spectrum'
 
 export const ExampleListbox = Listbox.create<ShaderExample>()
 
@@ -298,10 +306,28 @@ const previewView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const controlView = (
   control: ShaderControl,
-  isDisabled: boolean,
+  model: Model,
   h: HtmlBuilder<Message>,
 ): Html => {
   const proportion = (control.value - control.min) / (control.max - control.min)
+  const maybeBinding = Array.findFirst(
+    model.microphoneBindings,
+    binding => binding.name === control.name,
+  )
+  const isSelected = Option.contains(model.maybeSelectedControl, control.name)
+  const inputLabel = Option.match(maybeBinding, {
+    onNone: () => '+ Input',
+    onSome: binding =>
+      `Mic · ${selectedBandsLabel(binding)} · ${MicrophoneState.match(
+        model.microphone,
+        {
+          Idle: () => 'off',
+          Starting: () => 'starting',
+          Ready: () => 'live',
+          Failed: () => 'unavailable',
+        },
+      )}`,
+  })
   return h.keyed('li')(
     control.name,
     [h.Class('min-w-0')],
@@ -319,6 +345,7 @@ const controlView = (
           h.output(
             [
               h.For(`control-${control.name}`),
+              h.AriaLive('off'),
               h.Class(
                 'rounded-[2px] bg-[#24202e] px-1 py-0.5 font-mono text-[10px] text-[#d3c3fc]',
               ),
@@ -363,7 +390,11 @@ const controlView = (
         h.Max(String(control.max)),
         h.Step(String(control.step)),
         h.Value(String(control.value)),
-        h.Disabled(isDisabled),
+        h.Disabled(
+          model.render._tag === 'Compiling' ||
+            model.engine._tag !== 'Ready' ||
+            (Option.isSome(maybeBinding) && model.microphone._tag === 'Ready'),
+        ),
         h.Style({ '--range': `${proportion * 100}%` }),
         h.OnInput(value =>
           Message.UpdatedControl({ name: control.name, value: Number(value) }),
@@ -373,6 +404,333 @@ const controlView = (
         [h.Class('flex justify-between font-mono text-[9px] text-[#686d76]')],
         [h.span([], [String(control.min)]), h.span([], [String(control.max)])],
       ),
+      h.button(
+        [
+          h.Type('button'),
+          h.Class(
+            `mt-2 w-full truncate rounded border px-1.5 py-1 text-left text-[10px] ${isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
+          ),
+          h.AriaLabel(`Input for ${control.name}`),
+          h.AriaExpanded(isSelected),
+          h.Id(`control-input-${control.name}`),
+          h.AriaControls(`control-input-editor-${control.name}`),
+          h.Title(inputLabel),
+          h.OnClick(Message.ClickedControlInput({ name: control.name })),
+        ],
+        [inputLabel],
+      ),
+    ],
+  )
+}
+
+const frequency = (value: number): string =>
+  value >= 1000
+    ? `${Number((value / 1000).toFixed(1))} kHz`
+    : `${Math.round(value)} Hz`
+
+const frequencyRange = (band: { low: number; high: number }): string =>
+  `${frequency(band.low)}–${frequency(band.high)}`
+
+const selectedBandsLabel = (binding: MicrophoneBinding): string =>
+  Array.isReadonlyArrayEmpty(binding.bands)
+    ? 'No bands'
+    : `${binding.bands.length} ${binding.bands.length === 1 ? 'band' : 'bands'}`
+
+const microphoneToolbarView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  MicrophoneState.match(model.microphone, {
+    Idle: () => h.span([h.Class(eyebrowClass)], ['GENERATED FROM WGSL']),
+    Failed: () => h.span([h.Class(eyebrowClass)], ['MIC UNAVAILABLE']),
+    Starting: () =>
+      button(
+        'Cancel microphone',
+        Message.ClickedStopMicrophone(),
+        'text-[10px] text-[#a7a0b6] hover:text-white',
+        false,
+        h,
+      ),
+    Ready: () =>
+      button(
+        '● Stop microphone',
+        Message.ClickedStopMicrophone(),
+        'text-[10px] text-[#a7d8b6] hover:text-white',
+        false,
+        h,
+      ),
+  })
+
+const microphoneStatusView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.div(
+    [
+      h.Class('shrink-0 whitespace-nowrap'),
+      h.Title('Audio is processed locally. Nothing is recorded.'),
+    ],
+    [
+      MicrophoneState.match(model.microphone, {
+        Idle: () =>
+          button(
+            'Start mic',
+            Message.ClickedStartMicrophone(),
+            `${toolbarButtonClass} border-[#67547d] bg-[#302739] text-[#e0d0fb]`,
+            false,
+            h,
+          ),
+        Starting: () =>
+          h.span(
+            [h.Role('status'), h.Class('text-[11px] text-[#b4a8c7]')],
+            ['Awaiting permission…'],
+          ),
+        Ready: () =>
+          h.span(
+            [h.Role('status'), h.Class('text-[11px] text-[#a7d8b6]')],
+            ['● Live'],
+          ),
+        Failed: () =>
+          button(
+            'Retry mic',
+            Message.ClickedStartMicrophone(),
+            `${toolbarButtonClass} border-[#67547d] bg-[#302739] text-[#e0d0fb]`,
+            false,
+            h,
+          ),
+      }),
+    ],
+  )
+
+const microphoneView = (
+  binding: MicrophoneBinding,
+  model: Model,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.div(
+    [h.Class('mt-2 space-y-2')],
+    [
+      MicrophoneState.match(model.microphone, {
+        Idle: () => h.empty,
+        Starting: () => h.empty,
+        Ready: () => h.empty,
+        Failed: ({ reason }) =>
+          h.p(
+            [h.Role('alert'), h.Class('text-[11px] text-[#e9b6a8]')],
+            [reason],
+          ),
+      }),
+      h.div(
+        [],
+        [
+          h.div(
+            [
+              h.Class(
+                'mb-1.5 flex justify-between gap-2 text-[10px] text-[#a29aaa]',
+              ),
+            ],
+            [
+              h.span([], ['Spectrum · click or drag to toggle bands']),
+              h.output(
+                [h.Class('font-mono text-[#c8b7ec]')],
+                [selectedBandsLabel(binding)],
+              ),
+            ],
+          ),
+          h.div(
+            [
+              h.Class(
+                'flex h-[72px] touch-none select-none items-end gap-px overflow-hidden rounded border border-line bg-[#0c0e11] p-1',
+              ),
+              h.AriaLabel('Microphone spectrum'),
+              h.OnMount(MountSpectrumSelection()),
+            ],
+            spectrumBands.map((band, index) => {
+              const isSelected = binding.bands.includes(index)
+              return h.keyed('button')(
+                String(band.low),
+                [
+                  h.Type('button'),
+                  h.DataAttribute('spectrum-band', String(index)),
+                  h.AriaLabel(frequencyRange(band)),
+                  h.AriaPressed(isSelected ? 'true' : 'false'),
+                  h.Title(frequencyRange(band)),
+                  h.Class(
+                    `flex h-full min-w-0 flex-1 items-end hover:bg-[#3b324c] ${isSelected ? 'bg-[#272030]' : ''}`,
+                  ),
+                  h.OnClick(
+                    Message.ClickedSpectrumBand({
+                      name: binding.name,
+                      index,
+                    }),
+                  ),
+                ],
+                [
+                  h.span([
+                    h.Class(
+                      `block w-full min-h-[2px] ${isSelected ? 'bg-[#c0a4fc]' : 'bg-[#4c5967]'}`,
+                    ),
+                    h.Style({
+                      height: `${(model.spectrum[index] ?? 0) * 100}%`,
+                    }),
+                  ]),
+                ],
+              )
+            }),
+          ),
+          h.div(
+            [
+              h.Class(
+                'mt-1 flex justify-between font-mono text-[9px] text-[#707580]',
+              ),
+            ],
+            [
+              h.span([], ['20 Hz']),
+              h.span([], ['200 Hz']),
+              h.span([], ['2 kHz']),
+              h.span([], ['20 kHz']),
+            ],
+          ),
+        ],
+      ),
+      h.div(
+        [h.Class('flex flex-wrap items-center gap-x-3 gap-y-1.5')],
+        [
+          h.div(
+            [h.Class('flex items-center gap-1.5')],
+            [
+              { label: 'Bass', low: 20, high: 250 },
+              { label: 'Mids', low: 250, high: 4000 },
+              { label: 'Highs', low: 4000, high: 16000 },
+            ].map(band => {
+              const presetBands = bandsInRange(band.low, band.high)
+              const isSelected = presetBands.every(index =>
+                binding.bands.includes(index),
+              )
+              return h.keyed('button')(
+                band.label,
+                [
+                  h.Type('button'),
+                  h.Class(
+                    `rounded border px-2 py-0.5 text-[10px] ${isSelected ? 'border-[#786292] bg-[#33293e] text-[#dac8f8]' : 'border-line text-[#aaa3b5] hover:border-[#786292]'}`,
+                  ),
+                  h.AriaPressed(isSelected ? 'true' : 'false'),
+                  h.OnClick(
+                    Message.SelectedControlBand({
+                      name: binding.name,
+                      low: band.low,
+                      high: band.high,
+                    }),
+                  ),
+                ],
+                [band.label],
+              )
+            }),
+          ),
+          h.label(
+            [
+              h.Class(
+                'flex min-w-40 flex-1 items-center gap-2 text-[10px] text-[#a4a0ac]',
+              ),
+            ],
+            [
+              h.span(
+                [h.Class('whitespace-nowrap')],
+                [`Gain · ${binding.gain.toFixed(1)}×`],
+              ),
+              h.input([
+                h.Type('range'),
+                h.Class('shader-range min-w-16 flex-1'),
+                h.AriaLabel('Microphone gain'),
+                h.Min('0.1'),
+                h.Max('8'),
+                h.Step('0.1'),
+                h.Value(String(binding.gain)),
+                h.OnInput(value =>
+                  Message.UpdatedControlGain({
+                    name: binding.name,
+                    gain: Number(value),
+                  }),
+                ),
+              ]),
+            ],
+          ),
+        ],
+      ),
+    ],
+  )
+
+const controlInputView = (
+  name: string,
+  model: Model,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const maybeBinding = Array.findFirst(
+    model.microphoneBindings,
+    binding => binding.name === name,
+  )
+  return h.div(
+    [
+      h.Class('border-t border-line bg-[#16141b] px-3 py-2'),
+      h.Id(`control-input-editor-${name}`),
+      h.Role('group'),
+      h.AriaLabel(`Input for ${name}`),
+    ],
+    [
+      h.div(
+        [h.Class('flex flex-wrap items-center gap-x-3 gap-y-1.5')],
+        [
+          h.h3(
+            [
+              h.Class(
+                'text-[12px] font-medium whitespace-nowrap text-[#d2c7e6]',
+              ),
+            ],
+            [`Input · ${name}`],
+          ),
+          h.div(
+            [h.Class('flex items-center gap-2')],
+            [
+              h.label(
+                [h.Class('flex items-center gap-2 text-[11px] text-[#a9a2b3]')],
+                [
+                  'Source',
+                  h.select(
+                    [
+                      h.AriaLabel('Input source'),
+                      h.Class(
+                        'rounded border border-[#3e3649] bg-[#211c29] px-2 py-1 text-[11px] text-[#d3c8e5]',
+                      ),
+                      h.Value(
+                        Option.isSome(maybeBinding) ? 'microphone' : 'manual',
+                      ),
+                      h.OnChange(input =>
+                        Message.SelectedControlInput({
+                          name,
+                          input:
+                            input === 'microphone' ? 'microphone' : 'manual',
+                        }),
+                      ),
+                    ],
+                    [
+                      h.option([h.Value('manual')], ['Manual']),
+                      h.option([h.Value('microphone')], ['Microphone']),
+                    ],
+                  ),
+                ],
+              ),
+              Option.isSome(maybeBinding)
+                ? microphoneStatusView(model, h)
+                : h.empty,
+            ],
+          ),
+          button(
+            'Close input',
+            Message.ClosedControlInput(),
+            'ml-auto text-[10px] whitespace-nowrap text-[#91859e] hover:text-white',
+            false,
+            h,
+          ),
+        ],
+      ),
+      Option.match(maybeBinding, {
+        onNone: () => h.empty,
+        onSome: binding => microphoneView(binding, model, h),
+      }),
     ],
   )
 }
@@ -381,49 +739,52 @@ const controlsView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
     [
       h.Class(
-        'flex max-h-[45%] min-h-0 flex-col overflow-hidden border-t border-line bg-panel max-[720px]:max-h-80',
+        'flex max-h-[55%] min-h-0 shrink-0 flex-col overflow-hidden border-t border-line bg-panel max-[720px]:max-h-[70dvh]',
       ),
       h.AriaLabel('Live shader controls'),
     ],
     [
       h.div(
         [h.Class(panelHeadingClass)],
-        [
-          h.h2([], ['Parameters']),
-          h.span([h.Class(eyebrowClass)], ['GENERATED FROM WGSL']),
-        ],
+        [h.h2([], ['Controls']), microphoneToolbarView(model, h)],
       ),
-      Option.match(model.maybeLive, {
-        onNone: () =>
-          h.p(
-            [h.Class('overflow-auto px-3 py-4 text-[12px] text-[#7e8590]')],
-            ['Your shader’s controls will appear here.'],
-          ),
-        onSome: live =>
-          Array.match(live.controls, {
-            onEmpty: () =>
+      h.div(
+        [h.Class('min-h-0 overflow-auto')],
+        [
+          Option.match(model.maybeLive, {
+            onNone: () =>
               h.p(
                 [h.Class('overflow-auto px-3 py-4 text-[12px] text-[#7e8590]')],
-                ['Add an @slider or @knob annotation to expose a parameter.'],
+                ['Your shader’s controls will appear here.'],
               ),
-            onNonEmpty: controls =>
-              h.ul(
-                [
-                  h.Class(
-                    'grid min-h-0 grid-cols-[repeat(auto-fit,minmax(100px,1fr))] items-center gap-4 overflow-auto p-3 max-[1000px]:gap-3',
+            onSome: live =>
+              Array.match(live.controls, {
+                onEmpty: () =>
+                  h.p(
+                    [
+                      h.Class(
+                        'overflow-auto px-3 py-4 text-[12px] text-[#7e8590]',
+                      ),
+                    ],
+                    ['Add an @slider or @knob annotation to expose a control.'],
                   ),
-                ],
-                controls.map(control =>
-                  controlView(
-                    control,
-                    model.render._tag === 'Compiling' ||
-                      model.engine._tag !== 'Ready',
-                    h,
+                onNonEmpty: controls =>
+                  h.ul(
+                    [
+                      h.Class(
+                        'grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] items-start gap-4 p-3 max-[1000px]:gap-3',
+                      ),
+                    ],
+                    controls.map(control => controlView(control, model, h)),
                   ),
-                ),
-              ),
+              }),
           }),
-      }),
+          Option.match(model.maybeSelectedControl, {
+            onNone: () => h.empty,
+            onSome: name => controlInputView(name, model, h),
+          }),
+        ],
+      ),
     ],
   )
 

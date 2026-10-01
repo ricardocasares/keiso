@@ -26,7 +26,8 @@
     opacity: 0.4;
   }
   button:focus-visible,
-  input:focus-visible {
+  input:focus-visible,
+  select:focus-visible {
     outline: 2px solid #b8a2ff;
     outline-offset: -2px;
   }
@@ -53,8 +54,8 @@
   height: 4px;
   background: linear-gradient(
     to right,
-    #b8a1f4 var(--range),
-    #37373e var(--range)
+    #b8a1f4 var(--range, 0%),
+    #37373e var(--range, 0%)
   );
   border-radius: 5px;
   cursor: pointer;
@@ -91,6 +92,16 @@
     #665981 8px,
     #d4bafa 13px,
     #211a34 19px
+  );
+}
+.example-afterhours .example-art {
+  background: repeating-radial-gradient(
+    circle,
+    #090b14 0 3px,
+    #66efd8 4px,
+    #251842 5px 8px,
+    #9055ed 9px,
+    #090b14 10px 13px
   );
 }
 .example-tunnel .example-art {
