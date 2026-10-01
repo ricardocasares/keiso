@@ -29,6 +29,7 @@ export const MicrophoneBinding = Schema.Struct({
   name: Schema.String,
   bands: Schema.Array(Schema.Natural),
   gain: Schema.Number,
+  maybeColor: Schema.Option(Schema.Number),
 })
 export type MicrophoneBinding = typeof MicrophoneBinding.Type
 export const SpectrumDrag = defineTaggedUnion({

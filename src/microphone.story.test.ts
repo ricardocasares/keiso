@@ -44,8 +44,18 @@ const readyModel = modifyFields(liveModel, {
   microphone: () => MicrophoneState.Ready(),
   microphoneSession: () => 1,
   microphoneBindings: () => [
-    { name: 'speed', bands: bandsInRange(20, 250), gain: 1 },
-    { name: 'intensity', bands: bandsInRange(20, 250), gain: 1 },
+    {
+      name: 'speed',
+      bands: bandsInRange(20, 250),
+      gain: 1,
+      maybeColor: Option.none(),
+    },
+    {
+      name: 'intensity',
+      bands: bandsInRange(20, 250),
+      gain: 1,
+      maybeColor: Option.none(),
+    },
   ],
 })
 const spectrum = (level: number) => spectrumBands.map(() => level)
@@ -192,7 +202,12 @@ describe('microphone control bindings', () => {
       model(model => {
         expect(model.maybeSelectedControl).toStrictEqual(Option.some('speed'))
         expect(model.microphoneBindings).toEqual([
-          { name: 'speed', bands: bandsInRange(20, 250), gain: 1 },
+          {
+            name: 'speed',
+            bands: bandsInRange(20, 250),
+            gain: 1,
+            maybeColor: Option.none(),
+          },
         ])
         expect(subscriptions.microphone.modelToDependencies(model)).toEqual({
           maybeSession: Option.none(),
@@ -215,7 +230,9 @@ describe('microphone control bindings', () => {
       update,
       given(
         modifyFields(readyModel, {
-          microphoneBindings: () => [{ name: 'speed', bands: [], gain: 1 }],
+          microphoneBindings: () => [
+            { name: 'speed', bands: [], gain: 1, maybeColor: Option.none() },
+          ],
         }),
       ),
       message(Message.ClickedSpectrumBand({ name: 'speed', index: 2 })),
@@ -233,7 +250,7 @@ describe('microphone control bindings', () => {
       ),
       model(model =>
         expect(model.microphoneBindings).toEqual([
-          { name: 'speed', bands: [2, 50], gain: 1 },
+          { name: 'speed', bands: [2, 50], gain: 1, maybeColor: Option.none() },
         ]),
       ),
       message(
@@ -249,7 +266,7 @@ describe('microphone control bindings', () => {
       message(Message.ClickedSpectrumBand({ name: 'speed', index: 2 })),
       model(model =>
         expect(model.microphoneBindings).toEqual([
-          { name: 'speed', bands: [50], gain: 1 },
+          { name: 'speed', bands: [50], gain: 1, maybeColor: Option.none() },
         ]),
       ),
       message(
@@ -270,7 +287,12 @@ describe('microphone control bindings', () => {
       ),
       model(model =>
         expect(model.microphoneBindings).toEqual([
-          { name: 'speed', bands: [2, ...bandsInRange(250, 4000)], gain: 1 },
+          {
+            name: 'speed',
+            bands: [2, ...bandsInRange(250, 4000)],
+            gain: 1,
+            maybeColor: Option.none(),
+          },
         ]),
       ),
       message(
@@ -278,7 +300,7 @@ describe('microphone control bindings', () => {
       ),
       model(model =>
         expect(model.microphoneBindings).toEqual([
-          { name: 'speed', bands: [2], gain: 1 },
+          { name: 'speed', bands: [2], gain: 1, maybeColor: Option.none() },
         ]),
       ),
       Command.expectNone(),
@@ -291,7 +313,9 @@ describe('microphone control bindings', () => {
       given(
         modifyFields(readyModel, {
           maybeSelectedControl: () => Option.some('speed'),
-          microphoneBindings: () => [{ name: 'speed', bands: [50], gain: 1 }],
+          microphoneBindings: () => [
+            { name: 'speed', bands: [50], gain: 1, maybeColor: Option.none() },
+          ],
         }),
       ),
       message(Message.StartedSpectrumSelection({ index: -1 })),
@@ -343,7 +367,9 @@ describe('microphone control bindings', () => {
       given(
         modifyFields(readyModel, {
           maybeSelectedControl: () => Option.some('speed'),
-          microphoneBindings: () => [{ name: 'speed', bands: [], gain: 1 }],
+          microphoneBindings: () => [
+            { name: 'speed', bands: [], gain: 1, maybeColor: Option.none() },
+          ],
         }),
       ),
       message(Message.StartedSpectrumSelection({ index: 2 })),
@@ -354,7 +380,7 @@ describe('microphone control bindings', () => {
         expect(model.spectrumDrag._tag).toBe('Idle')
         expect(model.maybeSelectedControl).toStrictEqual(Option.none())
         expect(model.microphoneBindings).toEqual([
-          { name: 'speed', bands: [2], gain: 1 },
+          { name: 'speed', bands: [2], gain: 1, maybeColor: Option.none() },
         ])
       }),
       Command.expectNone(),
@@ -548,7 +574,12 @@ describe('microphone control bindings', () => {
       ),
       model(model => {
         expect(model.microphoneBindings).toEqual([
-          { name: 'speed', bands: bandsInRange(20, 250), gain: 1 },
+          {
+            name: 'speed',
+            bands: bandsInRange(20, 250),
+            gain: 1,
+            maybeColor: Option.none(),
+          },
         ])
         expect(model.maybeSelectedControl).toStrictEqual(Option.none())
         expect(model.spectrumDrag._tag).toBe('Idle')
@@ -572,4 +603,73 @@ describe('microphone control bindings', () => {
       }),
     )
   })
+})
+
+test('microphone colors scale the chosen RGB without fading their base, and reset/manual edits refresh it', () => {
+  const source = '// @color sky #AABBCC\n// @slider speed 0 3 1 .1'
+  const colorSnapshot = modifyFields(snapshot, {
+    source: () => source,
+    controls: () => parseControls(source).controls,
+  })
+  const colorModel = modifyFields(readyModel, {
+    source: () => source,
+    maybeLive: () => Option.some(colorSnapshot),
+    microphoneBindings: () => [],
+  })
+  const bound = update(
+    colorModel,
+    Message.SelectedControlInput({ name: 'sky', input: 'microphone' }),
+  ).model
+  const value = (current: typeof bound) =>
+    Option.getOrThrow(current.maybeLive).controls[0]?.value
+  const half = update(bound, frame(0.5)).model
+  expect(value(half)).toBe(0x555e66)
+  expect(value(update(half, frame(0.5)).model)).toBe(0x555e66)
+  const silent = update(half, frame(0)).model
+  expect(value(silent)).toBe(0)
+  expect(value(update(silent, frame(1)).model)).toBe(0xaabbcc)
+  const sliderEdit = update(
+    half,
+    Message.UpdatedControl({ name: 'speed', value: 2 }),
+  ).model
+  expect(value(update(sliderEdit, frame(1)).model)).toBe(0xaabbcc)
+  const gain = update(
+    half,
+    Message.UpdatedControlGain({ name: 'sky', gain: 2 }),
+  ).model
+  expect(value(update(gain, frame(0.5)).model)).toBe(0xaabbcc)
+  const stopped = update(half, Message.ClickedStopMicrophone()).model
+  const picked = update(
+    stopped,
+    Message.UpdatedControl({ name: 'sky', value: 0x224466 }),
+  ).model
+  const restarted = modifyFields(picked, {
+    microphone: () => MicrophoneState.Ready(),
+  })
+  expect(value(update(restarted, frame(0.5)).model)).toBe(0x112233)
+  const reset = update(restarted, Message.ClickedResetControls()).model
+  expect(value(update(reset, frame(1)).model)).toBe(0xaabbcc)
+  const manual = update(
+    half,
+    Message.SelectedControlInput({ name: 'sky', input: 'manual' }),
+  ).model
+  expect(value(update(manual, frame(1)).model)).toBe(0x555e66)
+  const rerender = update(
+    half,
+    Message.CompletedRenderShader({
+      snapshot: Option.getOrThrow(half.maybeLive),
+      diagnostics: [],
+    }),
+  ).model
+  expect(value(update(rerender, frame(1)).model)).toBe(0xaabbcc)
+  const newSource = source.replace('#AABBCC', '#224466')
+  const changed = modifyFields(colorSnapshot, {
+    source: () => newSource,
+    controls: () => parseControls(newSource).controls,
+  })
+  const rendered = update(
+    half,
+    Message.CompletedRenderShader({ snapshot: changed, diagnostics: [] }),
+  ).model
+  expect(value(update(rendered, frame(1)).model)).toBe(0x224466)
 })

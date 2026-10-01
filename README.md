@@ -39,6 +39,8 @@ Slider annotations use `// @slider name minimum maximum default step`. Color ann
 
 Rendering an edited or pasted shader preserves live values by control name. WGSL edits and annotation order keep your tuning. Changing a control’s type resets it to its declared default. Changing one declared default applies that value to only that control; changing its minimum, maximum, or step clamps and snaps its current value to the new valid range. New or renamed controls start at their defaults, and removed controls disappear. Failed renders keep the previous live shader and controls.
 
+Color controls can use microphone input to vary brightness from black to the selected color, preserving its hue. Frequency bands and gain work the same way as sliders. Stop the microphone to pick a new base color.
+
 **Reset** in the Controls header restores defaults from the last successfully rendered code without rendering or changing the draft. Microphone bindings remain active and can update those values again.
 
 Available uniforms:

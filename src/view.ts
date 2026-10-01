@@ -439,23 +439,21 @@ const controlView = (
               h.span([], [String(control.max)]),
             ],
           ),
-      control.kind === 'color'
-        ? h.empty
-        : h.button(
-            [
-              h.Type('button'),
-              h.Class(
-                `mt-auto w-full truncate rounded border px-1.5 py-1 text-left text-[10px] ${isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
-              ),
-              h.AriaLabel(`Input for ${control.name}`),
-              h.AriaExpanded(isSelected),
-              h.Id(`control-input-${control.name}`),
-              h.AriaControls(`control-input-editor-${control.name}`),
-              h.Title(inputLabel),
-              h.OnClick(Message.ClickedControlInput({ name: control.name })),
-            ],
-            [inputLabel],
+      h.button(
+        [
+          h.Type('button'),
+          h.Class(
+            `mt-auto w-full truncate rounded border px-1.5 py-1 text-left text-[10px] ${isSelected ? 'border-[#82709e] bg-[#292331] text-[#dcccfb]' : 'border-line text-[#a29aaf] hover:border-[#6a5c7e] hover:text-[#dcccfb]'}`,
           ),
+          h.AriaLabel(`Input for ${control.name}`),
+          h.AriaExpanded(isSelected),
+          h.Id(`control-input-${control.name}`),
+          h.AriaControls(`control-input-editor-${control.name}`),
+          h.Title(inputLabel),
+          h.OnClick(Message.ClickedControlInput({ name: control.name })),
+        ],
+        [inputLabel],
+      ),
     ],
   )
 }
@@ -717,7 +715,9 @@ const controlInputView = (
                 'text-[12px] font-medium whitespace-nowrap text-[#d2c7e6]',
               ),
             ],
-            [`Input · ${name}`],
+            [
+              `Input · ${name}${Option.exists(model.maybeLive, live => live.controls.some(control => control.name === name && control.kind === 'color')) ? ' · Brightness' : ''}`,
+            ],
           ),
           h.div(
             [h.Class('flex items-center gap-2')],

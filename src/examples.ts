@@ -1,3 +1,5 @@
+import { Option } from 'effect'
+
 import { bandsInRange } from './audio'
 import type { MicrophoneBinding } from './model'
 
@@ -118,9 +120,24 @@ fn fragment(uv: vec2f) -> vec4f {
       description: 'Mic-reactive techno: bass, motion, and sparks.',
       accent: '#66efd8',
       microphoneBindings: [
-        { name: 'bass', bands: bandsInRange(20, 250), gain: 1.2 },
-        { name: 'mids', bands: bandsInRange(250, 4000), gain: 1.4 },
-        { name: 'highs', bands: bandsInRange(4000, 16000), gain: 1.8 },
+        {
+          name: 'bass',
+          bands: bandsInRange(20, 250),
+          gain: 1.2,
+          maybeColor: Option.none(),
+        },
+        {
+          name: 'mids',
+          bands: bandsInRange(250, 4000),
+          gain: 1.4,
+          maybeColor: Option.none(),
+        },
+        {
+          name: 'highs',
+          bands: bandsInRange(4000, 16000),
+          gain: 1.8,
+          maybeColor: Option.none(),
+        },
       ],
       source: `// AFTERHOURS / an audiovisual light installation
 // Render, then Start mic. Play techno through your speakers.

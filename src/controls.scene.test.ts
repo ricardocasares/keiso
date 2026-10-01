@@ -3,6 +3,7 @@ import {
   Command,
   Mount,
   Subscription,
+  change,
   click,
   expect,
   given,
@@ -28,6 +29,7 @@ import {
   view,
 } from './main'
 import { Message } from './message'
+import { MountSpectrumSelection } from './spectrum'
 
 test('Slider and color inputs sync live values and Reset restores defaults', () => {
   const baseModel = init({
@@ -125,6 +127,11 @@ test('Slider and color inputs sync live values and Reset restores defaults', () 
     ),
     expect(role('slider', { name: 'speed' })).toHaveValue('0.7'),
     expect(label('sky')).toHaveValue('#aabbcc'),
+    click(role('button', { name: 'Input for sky' })),
+    expect(role('group', { name: 'Input for sky' })).toExist(),
+    change(role('combobox', { name: 'Input source' }), 'microphone'),
+    Mount.resolve(MountSpectrumSelection, Message.EndedSpectrumSelection()),
+    expect(role('button', { name: 'Bass' })).toExist(),
     Command.expectNone(),
   )
 })

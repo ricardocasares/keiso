@@ -391,15 +391,39 @@ const completedRender =
           : model.liveGeneration,
       spectrumDrag: () => SpectrumDrag.Idle(),
       maybeLive: () => Option.some(snapshot),
-      microphoneBindings: Array.filter(binding =>
-        snapshot.controls.some(
-          control => control.name === binding.name && control.kind === 'slider',
-        ),
-      ),
+      microphoneBindings: bindings =>
+        bindings
+          .filter(binding =>
+            snapshot.controls.some(control => control.name === binding.name),
+          )
+          .map(binding => {
+            const color = snapshot.controls.find(
+              control =>
+                control.name === binding.name && control.kind === 'color',
+            )
+            const previous = Option.flatMap(model.maybeLive, live =>
+              Array.findFirst(
+                parseControls(live.source).controls,
+                control => control.name === binding.name,
+              ),
+            )
+            const definition = parseControls(snapshot.source).controls.find(
+              control => control.name === binding.name,
+            )
+            return modifyFields(binding, {
+              maybeColor: () =>
+                !color
+                  ? Option.none()
+                  : Option.isSome(previous) &&
+                      previous.value.kind === 'color' &&
+                      previous.value.value === definition?.value &&
+                      Option.isSome(binding.maybeColor)
+                    ? binding.maybeColor
+                    : Option.some(color.value),
+            })
+          }),
       maybeSelectedControl: Option.filter(name =>
-        snapshot.controls.some(
-          control => control.name === name && control.kind === 'slider',
-        ),
+        snapshot.controls.some(control => control.name === name),
       ),
     })
     if (model.mode === 'projection') {
@@ -475,6 +499,7 @@ const receiveBroadcast =
 const syncControlValues = (
   model: Model,
   toControl: (control: ShaderControl) => ShaderControl,
+  updatesColor = true,
 ): UpdateReturn => {
   if (
     model.mode !== 'control' ||
@@ -487,19 +512,36 @@ const syncControlValues = (
     onNone: () => ({ model }),
     onSome: live => {
       const controls = live.controls.map(toControl)
+      const nextModel = updatesColor
+        ? modifyFields(model, {
+            microphoneBindings: Array.map(binding => {
+              const color = controls.find(
+                control =>
+                  control.name === binding.name && control.kind === 'color',
+              )
+              return color &&
+                color !==
+                  live.controls.find(control => control.name === binding.name)
+                ? modifyFields(binding, {
+                    maybeColor: () => Option.some(color.value),
+                  })
+                : binding
+            }),
+          })
+        : model
       if (
         controls.every(
           (control, index) => control.value === live.controls[index]?.value,
         )
       ) {
-        return { model }
+        return { model: nextModel }
       }
       const snapshot = modifyFields(live, {
         controls: () => controls,
         revision: revision => revision + 1,
       })
       return {
-        model: modifyFields(model, {
+        model: modifyFields(nextModel, {
           maybeLive: () => Option.some(snapshot),
         }),
         commands: [
@@ -536,9 +578,7 @@ const updateControl =
 const hasLiveControl = (model: Model, name: string): boolean =>
   model.mode === 'control' &&
   Option.exists(model.maybeLive, live =>
-    live.controls.some(
-      control => control.name === name && control.kind === 'slider',
-    ),
+    live.controls.some(control => control.name === name),
   )
 
 const updateBinding = (
@@ -653,31 +693,45 @@ const updateMicrophoneSpectrum = (
     return { model }
   }
   const spectrumModel = modifyFields(model, { spectrum: () => spectrum })
-  return syncControlValues(spectrumModel, control => {
-    const binding = model.microphoneBindings.find(
-      binding => binding.name === control.name,
-    )
-    if (!binding || control.kind === 'color') {
-      return control
-    }
-    const level = bandLevel(spectrum, binding.bands, binding.gain)
-    const value = control.min + level * (control.max - control.min)
-    return modifyFields(control, {
-      value: () =>
-        Math.min(
-          control.max,
-          Math.max(
-            control.min,
-            Number(
-              (
-                control.min +
-                Math.round((value - control.min) / control.step) * control.step
-              ).toPrecision(6),
+  return syncControlValues(
+    spectrumModel,
+    control => {
+      const binding = model.microphoneBindings.find(
+        binding => binding.name === control.name,
+      )
+      if (!binding) {
+        return control
+      }
+      const level = bandLevel(spectrum, binding.bands, binding.gain)
+      if (control.kind === 'color') {
+        const color = Option.getOrElse(binding.maybeColor, () => control.value)
+        return modifyFields(control, {
+          value: () =>
+            (Math.round(((color >> 16) & 255) * level) << 16) |
+            (Math.round(((color >> 8) & 255) * level) << 8) |
+            Math.round((color & 255) * level),
+        })
+      }
+      const value = control.min + level * (control.max - control.min)
+      return modifyFields(control, {
+        value: () =>
+          Math.min(
+            control.max,
+            Math.max(
+              control.min,
+              Number(
+                (
+                  control.min +
+                  Math.round((value - control.min) / control.step) *
+                    control.step
+                ).toPrecision(6),
+              ),
             ),
           ),
-        ),
-    })
-  })
+      })
+    },
+    false,
+  )
 }
 
 const rendererFailed =
@@ -817,6 +871,17 @@ export const update = (model: Model, message: Message) =>
                         name,
                         bands: bandsInRange(20, 250),
                         gain: 1,
+                        maybeColor: Option.flatMap(model.maybeLive, live =>
+                          Option.map(
+                            Array.findFirst(
+                              live.controls,
+                              control =>
+                                control.name === name &&
+                                control.kind === 'color',
+                            ),
+                            control => control.value,
+                          ),
+                        ),
                       }),
             }),
           },
