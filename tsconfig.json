@@ -10,7 +10,8 @@
     "esModuleInterop": true,
     "exactOptionalPropertyTypes": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["@webgpu/types"]
   },
   "include": ["src/**/*"]
 }
