@@ -22,6 +22,12 @@ curl -i http://localhost:3000/api/health
 
 The server listens on `127.0.0.1:3000`. It is intended for trusted local callers: the AI routes can use the server's credentials and contact caller-selected providers.
 
+### Vercel
+
+Import this repository into Vercel. `vercel.json` selects Vite for the static frontend and Bun 1.4 for the API. Vercel runs `api/index.ts` as a [native Bun server function](https://vercel.com/docs/functions/runtimes/bun#deploy-a-bun-server-from-api); the rewrite sends `/api/*` requests to that function while preserving their original paths for the Effect router.
+
+Set `OPENAI_API_KEY` and optionally `OPENAI_BASE_URL` in the project's Vercel environment variables, then deploy. Check `/api/health` for a `204` response. Keep the deployment restricted to trusted callers: the API has no authentication and callers can use the configured server key. Localhost provider URLs refer to the Vercel server, not the visitor's computer.
+
 ### AI endpoints
 
 Generation uses Effect's `LanguageModel` service with `@effect/ai-openai-compat`. Configure the server in `.env` (loaded by Bun):
