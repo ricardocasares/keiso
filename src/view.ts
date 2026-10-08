@@ -1,8 +1,17 @@
 import { Array, Option } from 'effect'
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
-import { Button, Listbox, RadioGroup } from '@foldkit/ui'
+import {
+  Button,
+  Disclosure,
+  HoverIntent,
+  Input,
+  Listbox,
+  RadioGroup,
+  Select,
+} from '@foldkit/ui'
 
+import { MountGeneratedPreview } from './ai-preview'
 import { bandsInRange, spectrumBands } from './audio'
 import { type MidiBinding, midiSourceLabel } from './domain/midi'
 import { Waveform } from './domain/oscillator'
@@ -11,6 +20,7 @@ import { type ShaderExample, shaderExamples } from './examples'
 import { MountEditor, MountRenderer } from './host'
 import { Message } from './message'
 import {
+  AiModel,
   EngineState,
   type MicrophoneBinding,
   MicrophoneState,
@@ -30,6 +40,8 @@ const eyebrowClass =
   'font-mono text-[9px] tracking-[0.6px] text-[#777e88] max-[1000px]:text-[8px]'
 const toolbarButtonClass =
   'rounded-[3px] border px-2.5 py-0.5 text-[12px] leading-[20px] font-medium transition-colors'
+const aiIconButtonClass =
+  'flex shrink-0 items-center justify-center rounded-md text-[#9298a3] transition-colors hover:bg-[#292c33] hover:text-[#e4e5eb] data-disabled:cursor-not-allowed data-disabled:opacity-40'
 const stageMessageClass =
   'absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-auto bg-[#0d1015] p-4 text-center text-[#a8acb4] [&_strong]:text-[#d4c5f4] [&_p]:max-w-[420px] [&_p]:text-[12px] [&_p]:leading-relaxed'
 
@@ -187,8 +199,421 @@ const editorView = (model: Model, h: HtmlBuilder<Message>): Html =>
           ),
         ],
       ),
+      aiComposerView(model, h),
     ],
   )
+
+const spinnerView = (h: HtmlBuilder<Message>): Html =>
+  h.span([
+    h.AriaHidden(true),
+    h.Class(
+      'size-3 shrink-0 animate-spin rounded-full border border-current border-t-transparent motion-reduce:animate-none',
+    ),
+  ])
+
+const generatedPreviewView = (model: Model, h: HtmlBuilder<Message>): Html => {
+  if (model.generation._tag !== 'Ready') {
+    return h.empty
+  }
+  return h.div(
+    [h.Class('relative aspect-[16/10] w-full overflow-hidden bg-black')],
+    [
+      h.canvas([
+        h.AriaLabel('Generated WGSL preview'),
+        h.Class('block size-full'),
+      ]),
+      EngineState.match(model.generation.preview, {
+        Starting: () =>
+          h.div(
+            [h.Class(`${stageMessageClass} text-[11px]`), h.Role('status')],
+            [spinnerView(h), 'Preparing preview…'],
+          ),
+        Ready: () => h.empty,
+        Failed: ({ reason }) =>
+          h.div(
+            [h.Class(stageMessageClass), h.Role('status')],
+            [h.strong([], ['Preview unavailable']), h.p([], [reason])],
+          ),
+      }),
+    ],
+  )
+}
+
+const applyGenerationView = (model: Model, h: HtmlBuilder<Message>): Html => {
+  const isGenerating = model.generation._tag === 'Generating'
+  const isReady = model.generation._tag === 'Ready'
+  const isDisabled =
+    !isReady ||
+    model.engine._tag !== 'Ready' ||
+    model.render._tag === 'Compiling'
+  return h.submodel({
+    slotId: 'ai-preview',
+    model: model.aiPreview,
+    view: HoverIntent.view,
+    toParentMessage: message => Message.GotAiPreviewMessage({ message }),
+    viewInputs: {
+      focusTriggerSelector: '#ai-apply',
+      toView: ({ trigger, panel, isVisible }) =>
+        h.div(
+          [h.Class('shrink-0')],
+          [
+            Button.view(
+              {
+                onClick: Message.ClickedApplyGeneration(),
+                isDisabled,
+                toView: attributes =>
+                  h.button(
+                    [
+                      ...attributes.button,
+                      ...trigger,
+                      h.Id('ai-apply'),
+                      h.AriaLabel(
+                        isGenerating
+                          ? 'Generating'
+                          : 'Apply generated visualization',
+                      ),
+                      h.AriaExpanded(isReady && isVisible),
+                      ...(isReady && isVisible
+                        ? [h.AriaControls('ai-generated-preview')]
+                        : []),
+                      h.Title(
+                        isReady
+                          ? 'Preview and apply generated visualization'
+                          : 'Generate a visualization to apply',
+                      ),
+                      h.Class(
+                        `flex h-7 min-w-[52px] items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors data-disabled:cursor-not-allowed ${isGenerating ? 'bg-[#202228] text-[#a9adb7]' : isDisabled ? 'bg-[#1c1e23] text-[#626873]' : 'bg-[#30293e] text-[#ded0ff] hover:bg-[#3e3353]'}`,
+                      ),
+                    ],
+                    isGenerating ? [spinnerView(h), 'Generating'] : ['Apply'],
+                  ),
+              },
+              h,
+            ),
+            isReady && isVisible && model.generation._tag === 'Ready'
+              ? h.section(
+                  [
+                    ...panel,
+                    h.Id('ai-generated-preview'),
+                    h.AriaLabel('Generated visualization preview'),
+                    h.Style({
+                      position: 'absolute',
+                      margin: '0',
+                      visibility: 'hidden',
+                    }),
+                    h.Class(
+                      'z-50 w-[440px] max-w-[calc(100vw-24px)] overflow-hidden rounded-lg border border-[#45404f] bg-panel shadow-[0_16px_64px_#000b]',
+                    ),
+                    h.OnMount(
+                      MountGeneratedPreview({
+                        source: model.generation.source,
+                        startedAt: model.startedAt,
+                      }),
+                    ),
+                  ],
+                  [
+                    h.div(
+                      [
+                        h.Class(
+                          'flex items-center justify-between border-b border-line bg-toolbar px-3 py-2',
+                        ),
+                      ],
+                      [
+                        h.h2(
+                          [h.Class('text-[11px]! font-medium')],
+                          ['Generated preview'],
+                        ),
+                        h.span(
+                          [
+                            h.Class(
+                              'font-mono text-[9px] tracking-wide text-[#9589ac]',
+                            ),
+                          ],
+                          ['WGSL · MOCK'],
+                        ),
+                      ],
+                    ),
+                    generatedPreviewView(model, h),
+                    h.p(
+                      [
+                        h.Class(
+                          'border-t border-line px-3 py-2 text-[10px] text-muted',
+                        ),
+                      ],
+                      [
+                        'Apply to replace your code and render to the live output.',
+                      ],
+                    ),
+                  ],
+                )
+              : h.empty,
+          ],
+        ),
+    },
+  })
+}
+
+const aiComposerView = (model: Model, h: HtmlBuilder<Message>): Html => {
+  const isGenerating = model.generation._tag === 'Generating'
+  return Disclosure.view(
+    {
+      id: 'ai-settings',
+      isOpen: model.isAiSettingsOpen,
+      onToggle: isOpen => Message.ToggledAiSettings({ isOpen }),
+      ariaLabel: 'AI settings',
+      toView: ({ button: settingsButton, panel }) =>
+        h.div(
+          [h.Class('shrink-0 border-t border-line bg-toolbar')],
+          [
+            h.form(
+              [
+                h.AriaLabel('Generate visualization'),
+                h.OnSubmit(Message.SubmittedAiPrompt()),
+                h.Class('flex min-h-[46px] items-center gap-1.5 px-2 py-1.5'),
+              ],
+              [
+                h.div(
+                  [
+                    h.Class(
+                      'flex min-w-0 flex-1 items-center gap-1 rounded-lg border border-[#30333b] bg-[#101215] py-0.5 pr-1 pl-2 transition-colors focus-within:border-[#736687]',
+                    ),
+                  ],
+                  [
+                    Input.view(
+                      {
+                        id: 'ai-prompt',
+                        value: model.aiPrompt,
+                        placeholder: 'Ask AI',
+                        isDisabled: isGenerating,
+                        onInput: value => Message.UpdatedAiPrompt({ value }),
+                        toView: attributes =>
+                          h.input([
+                            ...attributes.input,
+                            h.AriaLabel('Ask AI'),
+                            h.Autocomplete('off'),
+                            h.Class(
+                              'h-7 min-w-0 flex-1 bg-transparent px-0.5 text-[12px] text-[#e0dfe6] placeholder:text-[#717782] focus-visible:outline-none disabled:cursor-wait disabled:opacity-50',
+                            ),
+                          ]),
+                      },
+                      h,
+                    ),
+                    Button.view(
+                      {
+                        onClick: Message.ToggledEditorCode({
+                          isIncluded: !model.includesEditorCode,
+                        }),
+                        isDisabled: isGenerating,
+                        toView: attributes =>
+                          h.button(
+                            [
+                              ...attributes.button,
+                              h.AriaLabel('Include current code'),
+                              h.AriaPressed(String(model.includesEditorCode)),
+                              h.Title(
+                                model.includesEditorCode
+                                  ? 'Current editor code will be included'
+                                  : 'Include current editor code with your prompt',
+                              ),
+                              h.Class(
+                                `${aiIconButtonClass} size-6 ${model.includesEditorCode ? 'bg-[#30293e] text-[#d5c4f5]! hover:bg-[#3e3353]' : ''}`,
+                              ),
+                            ],
+                            [
+                              h.svg(
+                                [
+                                  h.AriaHidden(true),
+                                  h.Class('size-3.5'),
+                                  h.Fill('none'),
+                                  h.ViewBox('0 0 20 20'),
+                                  h.Stroke('currentColor'),
+                                  h.StrokeWidth('1.5'),
+                                ],
+                                [
+                                  h.path([
+                                    h.StrokeLinecap('round'),
+                                    h.StrokeLinejoin('round'),
+                                    h.D('m6 5-5 5 5 5m8-10 5 5-5 5m-3-13-2 16'),
+                                  ]),
+                                ],
+                              ),
+                            ],
+                          ),
+                      },
+                      h,
+                    ),
+                    Button.view(
+                      {
+                        onClick: Message.SubmittedAiPrompt(),
+                        isDisabled: isGenerating || !model.aiPrompt.trim(),
+                        toView: attributes =>
+                          h.button(
+                            [
+                              ...attributes.button,
+                              h.AriaLabel('Send prompt'),
+                              h.Title('Generate visualization'),
+                              h.Class(
+                                'flex size-6 shrink-0 items-center justify-center rounded-md bg-[#eeedf2] text-[#202127] transition-colors hover:bg-white data-disabled:cursor-not-allowed data-disabled:bg-[#292c33] data-disabled:text-[#737986]',
+                              ),
+                            ],
+                            [
+                              h.svg(
+                                [
+                                  h.AriaHidden(true),
+                                  h.Class('size-3.5'),
+                                  h.Fill('none'),
+                                  h.ViewBox('0 0 20 20'),
+                                  h.Stroke('currentColor'),
+                                  h.StrokeWidth('1.7'),
+                                ],
+                                [
+                                  h.path([
+                                    h.StrokeLinecap('round'),
+                                    h.StrokeLinejoin('round'),
+                                    h.D('M10 15V5m-5 5 5-5 5 5'),
+                                  ]),
+                                ],
+                              ),
+                            ],
+                          ),
+                      },
+                      h,
+                    ),
+                  ],
+                ),
+                applyGenerationView(model, h),
+                h.button(
+                  [
+                    ...settingsButton,
+                    h.Title('AI settings'),
+                    h.Class(
+                      `${aiIconButtonClass} size-7 data-open:bg-[#30293e] data-open:text-[#d5c4f5]`,
+                    ),
+                  ],
+                  [
+                    h.svg(
+                      [
+                        h.AriaHidden(true),
+                        h.Class('size-4'),
+                        h.Fill('none'),
+                        h.ViewBox('0 0 24 24'),
+                        h.Stroke('currentColor'),
+                        h.StrokeWidth('1.5'),
+                      ],
+                      [
+                        h.path([
+                          h.StrokeLinecap('round'),
+                          h.StrokeLinejoin('round'),
+                          h.D('M4 7h3m6 0h7M4 17h7m6 0h3'),
+                        ]),
+                        h.circle([h.Cx('10'), h.Cy('7'), h.R('3')]),
+                        h.circle([h.Cx('14'), h.Cy('17'), h.R('3')]),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            model.isAiSettingsOpen
+              ? h.section(
+                  [
+                    ...panel,
+                    h.AriaLabel('AI configuration'),
+                    h.Class('border-t border-line bg-[#111315] px-3 py-2.5'),
+                    h.OnKeyDownFocus(key =>
+                      key === 'Escape'
+                        ? Option.some({
+                            focusSelector: '#ai-settings-button',
+                            message: Message.ToggledAiSettings({
+                              isOpen: false,
+                            }),
+                          })
+                        : Option.none(),
+                    ),
+                  ],
+                  [
+                    h.h3(
+                      [h.Class('mb-2 text-[11px] font-medium text-[#c9cbd1]')],
+                      ['AI configuration'],
+                    ),
+                    Select.view(
+                      {
+                        id: 'ai-model',
+                        value: model.aiModel,
+                        isDisabled: isGenerating,
+                        onChange: value => Message.SelectedAiModel({ value }),
+                        toView: attributes =>
+                          h.div(
+                            [
+                              h.Class(
+                                'flex items-center justify-between gap-4',
+                              ),
+                            ],
+                            [
+                              h.label(
+                                [
+                                  ...attributes.label,
+                                  h.Class('text-[11px] text-muted'),
+                                ],
+                                ['AI model'],
+                              ),
+                              h.div(
+                                [h.Class('relative w-40 max-w-[60%]')],
+                                [
+                                  h.select(
+                                    [
+                                      ...attributes.select,
+                                      h.Class(
+                                        'h-7 w-full cursor-pointer appearance-none rounded-[4px] border border-[#303238] bg-[#1c1e21] pr-6 pl-2 text-[11px] text-[#c9cbd1] transition-colors hover:border-[#50505b] disabled:cursor-wait disabled:opacity-50',
+                                      ),
+                                    ],
+                                    AiModel.literals.map(name =>
+                                      h.keyed('option')(
+                                        name,
+                                        [h.Value(name)],
+                                        [name],
+                                      ),
+                                    ),
+                                  ),
+                                  dropdownCaret(
+                                    'pointer-events-none absolute top-2 right-2 size-3 text-[#717782]',
+                                    h,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                      },
+                      h,
+                    ),
+                  ],
+                )
+              : h.empty,
+            h.span(
+              [h.Role('status'), h.AriaLive('polite'), h.Class('sr-only')],
+              [
+                isGenerating
+                  ? 'Generating visualization'
+                  : model.generation._tag === 'Ready'
+                    ? 'Visualization ready. Hover or focus Apply to preview.'
+                    : '',
+              ],
+            ),
+            model.generation._tag === 'Failed'
+              ? h.p(
+                  [
+                    h.Role('alert'),
+                    h.Class('px-3 pb-2 text-[11px] text-[#f4a5a5]'),
+                  ],
+                  [model.generation.reason],
+                )
+              : h.empty,
+          ],
+        ),
+    },
+    h,
+  )
+}
 
 const diagnosticView = (
   diagnostic: Diagnostic,

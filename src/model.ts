@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
-import { Listbox, RadioGroup } from '@foldkit/ui'
+import { HoverIntent, Listbox, RadioGroup } from '@foldkit/ui'
 
 import { MidiBinding, MidiInput } from './domain/midi'
 import { OscillatorBinding } from './domain/oscillator'
@@ -11,6 +11,13 @@ import { Diagnostic } from './domain/shader'
 export const EngineState = defineTaggedUnion({
   Starting: {},
   Ready: {},
+  Failed: { reason: Schema.String },
+})
+export const AiModel = Schema.Literals(['GPT', 'Claude', 'Gemini'])
+export const GenerationState = defineTaggedUnion({
+  Idle: {},
+  Generating: {},
+  Ready: { source: Schema.String, preview: EngineState },
   Failed: { reason: Schema.String },
 })
 export const Validation = defineTaggedUnion({
@@ -64,6 +71,12 @@ export const Model = Schema.Struct({
   liveGeneration: Schema.Natural,
   exampleId: Schema.String,
   exampleListbox: Listbox.Model,
+  aiPrompt: Schema.String,
+  aiModel: AiModel,
+  includesEditorCode: Schema.Boolean,
+  isAiSettingsOpen: Schema.Boolean,
+  generation: GenerationState,
+  aiPreview: HoverIntent.Model,
   engine: EngineState,
   validation: Validation,
   render: RenderState,

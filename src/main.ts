@@ -2,7 +2,7 @@ import { Array, Clock, Effect, Option, Schema } from 'effect'
 import { Command, Dom, type Runtime, Update } from 'foldkit'
 import { modifyFields } from 'foldkit/struct'
 
-import { Listbox, RadioGroup } from '@foldkit/ui'
+import { HoverIntent, Listbox, RadioGroup } from '@foldkit/ui'
 
 import { bandLevel, bandsInRange, spectrumBands } from './audio'
 import { MidiSignal, matchesMidiSource } from './domain/midi'
@@ -19,8 +19,10 @@ import { shaderExamples } from './examples'
 import { channel, editor, errorReason, renderer } from './host'
 import { Message } from './message'
 import {
+  AiModel,
   EngineState,
   Flags,
+  GenerationState,
   type MicrophoneBinding,
   MicrophoneState,
   MidiState,
@@ -63,6 +65,12 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     liveGeneration: 0,
     exampleId: shaderExamples[0].id,
     exampleListbox: Listbox.init({ id: 'shader-examples' }),
+    aiPrompt: '',
+    aiModel: 'GPT',
+    includesEditorCode: false,
+    isAiSettingsOpen: false,
+    generation: GenerationState.Idle(),
+    aiPreview: HoverIntent.init({ openDelay: 0, closeDelay: 220 }),
     engine: EngineState.Starting(),
     validation: Validation.Checking(),
     render: RenderState.Idle(),
@@ -88,6 +96,30 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
 })
 
 // COMMAND
+
+export const GenerateShader = Command.define('GenerateShader', {
+  args: {
+    prompt: Schema.String,
+    model: AiModel,
+    maybeSource: Schema.Option(Schema.String),
+  },
+  messages: [Message.CompletedGenerateShader, Message.FailedGenerateShader],
+  // ponytail: every prompt/model returns the Aurora fixture until a backend is connected.
+  execute: () =>
+    Effect.gen(function* () {
+      yield* Effect.sleep('1400 millis')
+      const aurora = Option.getOrThrow(
+        Array.findFirst(shaderExamples, example => example.id === 'aurora'),
+      )
+      return Message.CompletedGenerateShader({ source: aurora.source })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedGenerateShader({ reason: errorReason(error) }),
+        ),
+      ),
+    ),
+})
 
 const failureDiagnostic = (error: unknown): Diagnostic => ({
   line: 1,
@@ -231,6 +263,14 @@ export const FocusControlInput = Command.define('FocusControlInput', {
     ),
 })
 
+export const FocusApplyGeneration = Command.define('FocusApplyGeneration', {
+  messages: [Message.CompletedFocusApplyGeneration],
+  execute: Dom.focus('#ai-apply', { preventScroll: true }).pipe(
+    Effect.ignore,
+    Effect.as(Message.CompletedFocusApplyGeneration()),
+  ),
+})
+
 // UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
@@ -268,6 +308,30 @@ const foldExampleListbox = Update.foldChild({
     modifyFields(model, { exampleListbox: () => nextExampleListbox }),
   toParentMessage: message => Message.GotExampleListboxMessage({ message }),
   foldOutMessage: foldExampleListboxOutMessage,
+})
+
+const foldAiPreview = Update.foldChild({
+  update: HoverIntent.update,
+  read: (model: Model) =>
+    model.generation._tag === 'Ready'
+      ? Option.some(model.aiPreview)
+      : Option.none(),
+  write: (model, nextAiPreview) =>
+    modifyFields(model, { aiPreview: () => nextAiPreview }),
+  toParentMessage: message => Message.GotAiPreviewMessage({ message }),
+  foldOutMessage: HoverIntent.OutMessage.match<Update.Step<Model, Message>>({
+    Opened: () => model => ({
+      model: modifyFields(model, {
+        generation: generation =>
+          generation._tag === 'Ready'
+            ? modifyFields(generation, {
+                preview: () => EngineState.Starting(),
+              })
+            : generation,
+      }),
+    }),
+    Closed: () => model => ({ model }),
+  }),
 })
 
 const hasErrors = (diagnostics: ReadonlyArray<Diagnostic>): boolean =>
@@ -1102,6 +1166,118 @@ export const update = (model: Model, message: Message) =>
     }),
     GotExampleListboxMessage: ({ message }) =>
       foldExampleListbox(model, message),
+    UpdatedAiPrompt: ({ value }) => ({
+      model:
+        model.generation._tag === 'Generating'
+          ? model
+          : modifyFields(model, { aiPrompt: () => value }),
+    }),
+    SelectedAiModel: ({ value }) => ({
+      model:
+        model.generation._tag !== 'Generating' && Schema.is(AiModel)(value)
+          ? modifyFields(model, { aiModel: () => value })
+          : model,
+    }),
+    ToggledEditorCode: ({ isIncluded }) => ({
+      model:
+        model.generation._tag === 'Generating'
+          ? model
+          : modifyFields(model, { includesEditorCode: () => isIncluded }),
+    }),
+    ToggledAiSettings: ({ isOpen }) => ({
+      model: modifyFields(model, { isAiSettingsOpen: () => isOpen }),
+    }),
+    SubmittedAiPrompt: () => {
+      const prompt = model.aiPrompt.trim()
+      if (
+        model.mode !== 'control' ||
+        !prompt ||
+        model.generation._tag === 'Generating'
+      ) {
+        return { model }
+      }
+      return {
+        model: modifyFields(model, {
+          generation: () => GenerationState.Generating(),
+          aiPreview: () => HoverIntent.init({ openDelay: 0, closeDelay: 220 }),
+        }),
+        commands: [
+          GenerateShader({
+            prompt,
+            model: model.aiModel,
+            maybeSource: model.includesEditorCode
+              ? Option.some(model.source)
+              : Option.none(),
+          }),
+        ],
+      }
+    },
+    CompletedGenerateShader: ({ source }) =>
+      model.generation._tag === 'Generating'
+        ? {
+            model: modifyFields(model, {
+              aiPrompt: () => '',
+              generation: () =>
+                GenerationState.Ready({
+                  source,
+                  preview: EngineState.Starting(),
+                }),
+            }),
+            commands: [FocusApplyGeneration()],
+          }
+        : { model },
+    CompletedFocusApplyGeneration: () => ({ model }),
+    FailedGenerateShader: ({ reason }) => ({
+      model:
+        model.generation._tag === 'Generating'
+          ? modifyFields(model, {
+              generation: () => GenerationState.Failed({ reason }),
+            })
+          : model,
+    }),
+    ClickedApplyGeneration: () => {
+      if (
+        model.mode !== 'control' ||
+        model.generation._tag !== 'Ready' ||
+        model.engine._tag !== 'Ready' ||
+        model.render._tag === 'Compiling'
+      ) {
+        return { model }
+      }
+      const source = model.generation.source
+      return Update.combine(model, [
+        stepModel => ({
+          model: modifyFields(stepModel, {
+            source: () => source,
+            draftGeneration: generation => generation + 1,
+            exampleId: () => '',
+            generation: () => GenerationState.Idle(),
+            validation: () => Validation.Checking(),
+          }),
+          commands: [UpdateEditor({ source, diagnostics: [] })],
+        }),
+        renderDraft,
+      ])
+    },
+    GotAiPreviewMessage: ({ message }) => foldAiPreview(model, message),
+    SucceededMountGeneratedPreview: ({ source }) => ({
+      model: modifyFields(model, {
+        generation: generation =>
+          generation._tag === 'Ready' && generation.source === source
+            ? modifyFields(generation, { preview: () => EngineState.Ready() })
+            : generation,
+      }),
+    }),
+    FailedMountGeneratedPreview: ({ source, reason }) => ({
+      model: modifyFields(model, {
+        generation: generation =>
+          generation._tag === 'Ready' && generation.source === source
+            ? modifyFields(generation, {
+                preview: () => EngineState.Failed({ reason }),
+              })
+            : generation,
+      }),
+    }),
     PressedRender: () => renderDraft(model),
     CompletedValidateShader: ({ source, diagnostics }) =>
       source !== model.source

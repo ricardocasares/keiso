@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { defineMessageUnion } from 'foldkit/message'
 
-import { Listbox, RadioGroup } from '@foldkit/ui'
+import { HoverIntent, Listbox, RadioGroup } from '@foldkit/ui'
 
 import { MidiInput, MidiSignal } from './domain/midi'
 import { Broadcast, Snapshot } from './domain/session'
@@ -17,6 +17,18 @@ export const Message = defineMessageUnion({
   FailedMountChannel: { reason: Schema.String },
   UpdatedSource: { source: Schema.String },
   GotExampleListboxMessage: { message: Listbox.Message },
+  UpdatedAiPrompt: { value: Schema.String },
+  SelectedAiModel: { value: Schema.String },
+  ToggledEditorCode: { isIncluded: Schema.Boolean },
+  ToggledAiSettings: { isOpen: Schema.Boolean },
+  SubmittedAiPrompt: {},
+  CompletedGenerateShader: { source: Schema.String },
+  CompletedFocusApplyGeneration: {},
+  FailedGenerateShader: { reason: Schema.String },
+  ClickedApplyGeneration: {},
+  GotAiPreviewMessage: { message: HoverIntent.Message },
+  SucceededMountGeneratedPreview: { source: Schema.String },
+  FailedMountGeneratedPreview: { source: Schema.String, reason: Schema.String },
   PressedRender: {},
   CompletedValidateShader: {
     source: Schema.String,
