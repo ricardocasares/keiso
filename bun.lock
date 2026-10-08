@@ -11,6 +11,7 @@
         "@codemirror/lint": "^6.9.7",
         "@codemirror/state": "^6.7.6",
         "@codemirror/view": "^6.43.13",
+        "@effect/ai-openai-compat": "4.0.0-rc.117",
         "@effect/platform-browser": "4.0.0-rc.117",
         "@effect/platform-bun": "4.0.0-rc.117",
         "@foldkit/ui": "0.164.0",
@@ -128,6 +129,13 @@
         },
       },
       "sha512-sihaFrUzAsYBQsL9J2t69y8nfMQGwcYmggAZsk+kjPbjYZMyuf2hU8tUNTZ+P+isb6XRr8JE22TZlJxBoVdH1A==",
+    ],
+
+    "@effect/ai-openai-compat": [
+      "@effect/ai-openai-compat@4.0.0-rc.117",
+      "",
+      { "peerDependencies": { "effect": "^4.0.0-rc.117" } },
+      "sha512-TJFO5CGOks+y9d6Fbj3/lfWO4FHWMIS0h+8MOMEcNyDau/BTZYIYP/Ab9OID0Rwsbvq3Wi7kxJKpA88QgaVqkw==",
     ],
 
     "@effect/platform-browser": [

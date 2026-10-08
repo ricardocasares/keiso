@@ -8,4 +8,9 @@ export default defineConfig({
   optimizeDeps: {
     entries: ['src/entry.ts'],
   },
+  server: {
+    proxy: {
+      '/api': 'http://127.0.0.1:3000',
+    },
+  },
 })

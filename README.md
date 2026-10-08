@@ -7,7 +7,7 @@ bun install
 bun run dev
 ```
 
-Open the localhost URL in a browser with WebGPU enabled. The frontend build is static: `bun run build` produces `dist/`; serve it over HTTPS. The studio currently runs independently of the API.
+Open the localhost URL in a browser with WebGPU enabled. Run `bun run api` in another terminal to enable AI generation and model loading. Vite proxies `/api` to the local API server. The frontend build is static: `bun run build` produces `dist/`; serve it over HTTPS and route `/api` to the API server when using AI.
 
 ## API
 
@@ -20,12 +20,54 @@ curl -i http://localhost:3000/api/health
 
 `GET /api/health` returns `204 No Content`. The contract lives in `src/api/contract.ts`, handlers in `src/api/handlers.ts`, and server composition in `src/api/server.ts`. `api/index.ts` only runs the final Effect program.
 
+The server listens on `127.0.0.1:3000`. It is intended for trusted local callers: the AI routes can use the server's credentials and contact caller-selected providers.
+
+### AI endpoints
+
+Generation uses Effect's `LanguageModel` service with `@effect/ai-openai-compat`. Configure the server in `.env` (loaded by Bun):
+
+```dotenv
+OPENAI_API_KEY=your-ollama-api-key
+OPENAI_BASE_URL=https://ollama.com/v1
+```
+
+`OPENAI_BASE_URL` is optional and defaults to Ollama Cloud at `https://ollama.com/v1`. `OPENAI_API_KEY` is optional for providers that do not require authentication; Ollama Cloud generation requires a key. Neither setting is exposed to the frontend.
+
+`POST /api/ai/generate` accepts JSON with a required, nonblank `prompt`, optional `model` (default `gemma4:31b-cloud`), and optional `baseUrl`. It returns the complete response as `{ "text": "..." }`. The server adds a system message describing the WGSL host, slider/color annotations, and source-only output rules from `src/api/shader-prompt.ts`; the user's request and optional editor source remain in a separate user message.
+
+```sh
+curl http://localhost:3000/api/ai/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Create a cyan and magenta gradient."}'
+```
+
+`GET /api/ai/models` returns `{ "models": ["gemma4:31b", "..."] }` from the provider's OpenAI-compatible `/models` endpoint. Set `baseUrl` in the query string to use another provider.
+
+Both endpoints accept an optional `x-api-key` header, which overrides the server key. For example:
+
+```sh
+curl http://localhost:3000/api/ai/generate \
+  -H 'Content-Type: application/json' \
+  -H 'x-api-key: your-provider-key' \
+  -d '{"prompt":"Create slowly moving waves.","model":"your-model","baseUrl":"https://provider.example/v1"}'
+
+curl --get http://localhost:3000/api/ai/models \
+  -H 'x-api-key: your-provider-key' \
+  --data-urlencode 'baseUrl=https://provider.example/v1'
+```
+
+Base URLs must include the provider's API prefix (usually `/v1`) and cannot contain embedded credentials, query parameters, or fragments. A different base URL receives only the request's key; the server key is used only for the configured base URL. Local Ollama works with `baseUrl: "http://localhost:11434/v1"`, an installed model name, and no key.
+
+Ollama's [direct cloud API](https://docs.ollama.com/api/openai-compatibility) uses `gemma4:31b`. The requested default alias `gemma4:31b-cloud` is translated to that ID only when calling `https://ollama.com/v1`; listed model IDs are returned unchanged.
+
+Invalid inputs return `400`; provider or malformed upstream responses return a sanitized `502`; requests exceeding two minutes return `504`. Upstream redirects are rejected. The studio calls these endpoints through the same origin; provider credentials stay on the server unless explicitly supplied in AI settings.
+
 ## Perform
 
 - Prismatica starts automatically: a psychedelic kaleidoscope with rotating polygon hoops, orbiting shapes, and a breathing flower. Its 16 controls include two colors, bass/mids/highs microphone inputs, and all four oscillator waveforms. Tempo sets the built-in pulse in BPM; **Start mic** adds audio response. Open an input to tune its bands/gain or period/depth/phase, or select Manual to use its control directly.
 - Load Aurora, Liquid chrome, Neon tunnel, Acid plasma, or Afterhours from the example picker to explore other looks.
 - Edit with WGSL highlighting, autocomplete, bracket matching, indentation, search, and undo. Cmd/Ctrl+Space opens completion.
-- Use **Ask AI** below the editor footer and send a prompt. Toggle the **code icon** to include the current editor draft (off by default), and open **AI settings** beside Apply to choose a model. Hover or focus **Apply** to preview the result, then click to compile it into the editor and live output. Generation is mocked: every prompt and model currently returns the Aurora shader after a short delay, with no backend requests.
+- Use **Ask AI** below the editor footer and send a prompt. Toggle the **code icon** to include the current editor draft (off by default). Open **AI settings** beside Apply to choose a model and optionally enter an API key or provider endpoint (the base URL, including `/v1`). Blank fields use the server defaults; a custom endpoint needs its own key when required by that provider. Models load when settings first open; use **Refresh models** after changing the connection. Keys are masked and kept in memory, excluded from serialized state, and cleared on reload. Hover or focus **Apply** to preview the generated shader, then click to compile it into the editor and live output. Failed requests retain the prompt for retry; generated code changes the draft and live output only after Apply.
 - Diagnostics update after a short pause, including line/column locations. Click one to jump to the problem.
 - **Cmd/Ctrl+Enter** compiles and commits the draft. Draft edits and failed compilation never replace the last successful pipeline.
 - Generated parameters operate on the **live shader**. Loading an example only changes the draft; its controls start at their defaults when successfully rendered.

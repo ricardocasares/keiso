@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Redacted, Schema, SchemaGetter } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
 import { HoverIntent, Listbox, RadioGroup } from '@foldkit/ui'
@@ -13,7 +13,20 @@ export const EngineState = defineTaggedUnion({
   Ready: {},
   Failed: { reason: Schema.String },
 })
-export const AiModel = Schema.Literals(['GPT', 'Claude', 'Gemini'])
+// Foldkit serializes the model for development reloads; credentials must stay in memory.
+export const AiApiKey = Schema.Redacted(Schema.String).annotate({
+  toCodecJson: () =>
+    Schema.link<Redacted.Redacted<string>>()(Schema.String, {
+      decode: SchemaGetter.succeed(Redacted.make('')),
+      encode: SchemaGetter.succeed(''),
+    }),
+})
+export const AiModelsState = defineTaggedUnion({
+  Idle: {},
+  Loading: {},
+  Ready: { models: Schema.Array(Schema.String) },
+  Failed: { reason: Schema.String },
+})
 export const GenerationState = defineTaggedUnion({
   Idle: {},
   Generating: {},
@@ -72,7 +85,10 @@ export const Model = Schema.Struct({
   exampleId: Schema.String,
   exampleListbox: Listbox.Model,
   aiPrompt: Schema.String,
-  aiModel: AiModel,
+  aiModel: Schema.String,
+  aiApiKey: AiApiKey,
+  aiBaseUrl: Schema.String,
+  aiModels: AiModelsState,
   includesEditorCode: Schema.Boolean,
   isAiSettingsOpen: Schema.Boolean,
   generation: GenerationState,

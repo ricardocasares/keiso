@@ -1,4 +1,4 @@
-import { Array, Option } from 'effect'
+import { Array, Option, Redacted } from 'effect'
 import {
   Command,
   Mount,
@@ -10,6 +10,7 @@ import {
   given,
   hover,
   keydown,
+  label,
   role,
   scene,
   selector,
@@ -29,6 +30,7 @@ import { shaderExamples } from './examples'
 import { MountEditor, MountRenderer } from './host'
 import {
   BroadcastState,
+  FetchAiModels,
   FocusApplyGeneration,
   GenerateShader,
   RenderShader,
@@ -58,6 +60,9 @@ const modelPicker = role('combobox', { name: 'AI model' })
 const includeCode = role('button', { name: 'Include current code' })
 const settings = role('button', { name: 'AI settings' })
 const configuration = role('region', { name: 'AI configuration' })
+const apiKey = label('API key (optional)')
+const endpoint = label('Endpoint (optional)')
+const refreshModels = role('button', { name: 'Refresh models' })
 const send = role('button', { name: 'Send prompt' })
 const apply = role('button', { name: 'Apply generated visualization' })
 const preview = role('region', { name: 'Generated visualization preview' })
@@ -105,24 +110,44 @@ test('compact AI controls disable during generation, preview on hover, and apply
     click(settings),
     expect(configuration).toExist(),
     expect(settings).toHaveAttr('aria-expanded', 'true'),
-    expect(modelPicker).toHaveValue('GPT'),
-    change(modelPicker, 'Gemini'),
+    Command.expectExact(
+      FetchAiModels({ apiKey: Redacted.make(''), baseUrl: '' }),
+    ),
+    expect(text('Loading models…')).toExist(),
+    expect(modelPicker).toHaveValue('gemma4:31b-cloud'),
+    expect(modelPicker).toBeDisabled(),
+    expect(apiKey).toBeDisabled(),
+    expect(endpoint).toBeDisabled(),
+    expect(refreshModels).toBeDisabled(),
+    expect(send).toBeDisabled(),
+    Command.resolve(
+      FetchAiModels,
+      Message.CompletedFetchAiModels({
+        models: ['gemma4:31b-cloud', 'qwen3.5:397b'],
+      }),
+    ),
+    change(modelPicker, 'qwen3.5:397b'),
     click(settings),
     expect(configuration).toBeAbsent(),
     expect(modelPicker).toBeAbsent(),
     click(settings),
-    expect(modelPicker).toHaveValue('Gemini'),
+    expect(modelPicker).toHaveValue('qwen3.5:397b'),
     click(send),
     Command.expectExact(
       GenerateShader({
         prompt: 'I want an aurora floating in the void',
-        model: 'Gemini',
+        model: 'qwen3.5:397b',
+        apiKey: Redacted.make(''),
+        baseUrl: '',
         maybeSource: Option.some(initialModel.source),
       }),
     ),
     expect(prompt).toBeDisabled(),
     expect(includeCode).toBeDisabled(),
     expect(modelPicker).toBeDisabled(),
+    expect(apiKey).toBeDisabled(),
+    expect(endpoint).toBeDisabled(),
+    expect(refreshModels).toBeDisabled(),
     expect(send).toBeDisabled(),
     expect(role('button', { name: 'Generating' })).toBeDisabled(),
     expect(text('Draft is live')).toExist(),
@@ -195,7 +220,9 @@ test('form submission supports keyboard use and focus previews close on Escape, 
     Command.expectExact(
       GenerateShader({
         prompt: 'Aurora',
-        model: 'GPT',
+        model: 'gemma4:31b-cloud',
+        apiKey: Redacted.make(''),
+        baseUrl: '',
         maybeSource: Option.none(),
       }),
     ),
@@ -238,5 +265,127 @@ test('form submission supports keyboard use and focus previews close on Escape, 
     Mount.expectEnded(MountGeneratedPreview),
     expect(preview).toBeAbsent(),
     Command.expectNone(),
+  )
+})
+
+test('optional connection settings load provider models and are forwarded to generation', () => {
+  scene(
+    { update, view },
+    given(initialModel),
+    mountEditor,
+    updateEditor,
+    mountRenderer,
+    renderInitial,
+    acknowledgeRender,
+    click(settings),
+    Command.resolve(
+      FetchAiModels,
+      Message.CompletedFetchAiModels({ models: ['gemma4:31b-cloud'] }),
+    ),
+    expect(apiKey).toHaveAttr('type', 'password'),
+    expect(apiKey).toHaveAttr('autocomplete', 'off'),
+    expect(apiKey).toHaveValue(''),
+    expect(endpoint).toHaveAttr('type', 'url'),
+    expect(endpoint).toHaveAttr('placeholder', 'Server default'),
+    expect(endpoint).toHaveValue(''),
+    type(apiKey, 'session-api-key'),
+    type(endpoint, 'https://llm.example/v1'),
+    click(refreshModels),
+    Command.expectExact(
+      FetchAiModels({
+        apiKey: Redacted.make('session-api-key'),
+        baseUrl: 'https://llm.example/v1',
+      }),
+    ),
+    Command.resolve(
+      FetchAiModels,
+      Message.CompletedFetchAiModels({
+        models: ['qwen3.5:397b', 'gemma4:31b'],
+      }),
+    ),
+    expect(modelPicker).toHaveValue('gemma4:31b'),
+    change(modelPicker, 'qwen3.5:397b'),
+    type(prompt, 'Aurora'),
+    click(send),
+    Command.expectExact(
+      GenerateShader({
+        prompt: 'Aurora',
+        model: 'qwen3.5:397b',
+        apiKey: Redacted.make('session-api-key'),
+        baseUrl: 'https://llm.example/v1',
+        maybeSource: Option.none(),
+      }),
+    ),
+    Command.resolve(
+      GenerateShader,
+      Message.FailedGenerateShader({
+        reason: 'The provider rejected the API key.',
+      }),
+    ),
+    expect(role('alert')).toHaveText('The provider rejected the API key.'),
+    expect(apiKey).toBeEnabled(),
+    expect(endpoint).toBeEnabled(),
+    expect(send).toBeEnabled(),
+    type(apiKey, ''),
+    type(endpoint, ''),
+    click(refreshModels),
+    Command.expectExact(
+      FetchAiModels({ apiKey: Redacted.make(''), baseUrl: '' }),
+    ),
+    Command.resolve(
+      FetchAiModels,
+      Message.CompletedFetchAiModels({ models: ['gemma4:31b-cloud'] }),
+    ),
+    click(send),
+    Command.expectExact(
+      GenerateShader({
+        prompt: 'Aurora',
+        model: 'gemma4:31b-cloud',
+        apiKey: Redacted.make(''),
+        baseUrl: '',
+        maybeSource: Option.none(),
+      }),
+    ),
+    Command.resolve(
+      GenerateShader,
+      Message.FailedGenerateShader({ reason: 'Provider unavailable' }),
+    ),
+  )
+})
+
+test('model loading errors can be retried and an empty list retains the default model', () => {
+  scene(
+    { update, view },
+    given(initialModel),
+    mountEditor,
+    updateEditor,
+    mountRenderer,
+    renderInitial,
+    acknowledgeRender,
+    click(settings),
+    Command.resolve(
+      FetchAiModels,
+      Message.FailedFetchAiModels({ reason: 'Provider unavailable' }),
+    ),
+    expect(role('alert')).toHaveText(
+      'Could not load models: Provider unavailable',
+    ),
+    expect(refreshModels).toBeEnabled(),
+    expect(apiKey).toBeEnabled(),
+    expect(endpoint).toBeEnabled(),
+    click(refreshModels),
+    expect(role('alert')).toBeAbsent(),
+    expect(text('Loading models…')).toExist(),
+    Command.resolve(
+      FetchAiModels,
+      Message.CompletedFetchAiModels({ models: [] }),
+    ),
+    expect(
+      text('No models returned. You can still use the selected model.'),
+    ).toExist(),
+    expect(modelPicker).toHaveValue('gemma4:31b-cloud'),
+    expect(modelPicker).toBeEnabled(),
+    type(prompt, 'Aurora'),
+    expect(send).toBeEnabled(),
   )
 })

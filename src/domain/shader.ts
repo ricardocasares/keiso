@@ -22,9 +22,7 @@ export type Diagnostic = typeof Diagnostic.Type
 
 export const MAX_CONTROLS = 16
 
-const reservedNames = new Set(
-  `globals controls Globals Controls vertex_main fragment_main
-  alias break case const const_assert continue continuing default diagnostic
+export const WGSL_RESERVED_IDENTIFIERS = `alias break case const const_assert continue continuing default diagnostic
   discard else enable false fn for if let loop override requires return struct
   switch true var while NULL Self abstract active alignas alignof as asm
   asm_fragment async attribute auto await become cast catch class co_await
@@ -41,7 +39,12 @@ const reservedNames = new Set(
   shared sizeof smooth snorm static static_assert static_cast std subroutine
   super target template this thread_local throw trait try type typedef typeid
   typename typeof union unless unorm unsafe unsized use using varying virtual
-  volatile wgsl where with writeonly yield`.split(/\s+/),
+  volatile wgsl where with writeonly yield`
+
+const reservedNames = new Set(
+  `globals controls Globals Controls vertex_main fragment_main ${WGSL_RESERVED_IDENTIFIERS}`.split(
+    /\s+/,
+  ),
 )
 
 const identifier = /^[_\p{XID_Start}][\p{XID_Continue}]*$/u

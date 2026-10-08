@@ -1,4 +1,4 @@
-import { Array, Option } from 'effect'
+import { Array, Option, Redacted } from 'effect'
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
 import {
@@ -20,7 +20,7 @@ import { type ShaderExample, shaderExamples } from './examples'
 import { MountEditor, MountRenderer } from './host'
 import { Message } from './message'
 import {
-  AiModel,
+  AiModelsState,
   EngineState,
   type MicrophoneBinding,
   MicrophoneState,
@@ -329,7 +329,7 @@ const applyGenerationView = (model: Model, h: HtmlBuilder<Message>): Html => {
                               'font-mono text-[9px] tracking-wide text-[#9589ac]',
                             ),
                           ],
-                          ['WGSL · MOCK'],
+                          ['WGSL'],
                         ),
                       ],
                     ),
@@ -355,6 +355,12 @@ const applyGenerationView = (model: Model, h: HtmlBuilder<Message>): Html => {
 
 const aiComposerView = (model: Model, h: HtmlBuilder<Message>): Html => {
   const isGenerating = model.generation._tag === 'Generating'
+  const isConnectionBusy = isGenerating || model.aiModels._tag === 'Loading'
+  const availableModels =
+    model.aiModels._tag === 'Ready' ? model.aiModels.models : []
+  const models = availableModels.includes(model.aiModel)
+    ? availableModels
+    : [model.aiModel, ...availableModels]
   return Disclosure.view(
     {
       id: 'ai-settings',
@@ -445,7 +451,7 @@ const aiComposerView = (model: Model, h: HtmlBuilder<Message>): Html => {
                     Button.view(
                       {
                         onClick: Message.SubmittedAiPrompt(),
-                        isDisabled: isGenerating || !model.aiPrompt.trim(),
+                        isDisabled: isConnectionBusy || !model.aiPrompt.trim(),
                         toView: attributes =>
                           h.button(
                             [
@@ -536,11 +542,95 @@ const aiComposerView = (model: Model, h: HtmlBuilder<Message>): Html => {
                       [h.Class('mb-2 text-[11px] font-medium text-[#c9cbd1]')],
                       ['AI configuration'],
                     ),
+                    Input.view(
+                      {
+                        id: 'ai-api-key',
+                        type: 'password',
+                        value: Redacted.value(model.aiApiKey),
+                        placeholder: 'Server default',
+                        isDisabled: isConnectionBusy,
+                        onInput: value =>
+                          Message.UpdatedAiApiKey({
+                            value: Redacted.make(value),
+                          }),
+                        toView: attributes =>
+                          h.div(
+                            [
+                              h.Class(
+                                'mb-2 flex items-center justify-between gap-4',
+                              ),
+                            ],
+                            [
+                              h.label(
+                                [
+                                  ...attributes.label,
+                                  h.Class('shrink-0 text-[11px] text-muted'),
+                                ],
+                                ['API key (optional)'],
+                              ),
+                              h.input([
+                                ...attributes.input,
+                                h.Autocomplete('off'),
+                                h.AriaDescribedBy('ai-connection-help'),
+                                h.Class(
+                                  'h-7 min-w-0 w-60 max-w-[65%] rounded-[4px] border border-[#303238] bg-[#1c1e21] px-2 text-[11px] text-[#c9cbd1] placeholder:text-[#717782] focus-visible:outline-[#736687] disabled:cursor-wait disabled:opacity-50',
+                                ),
+                              ]),
+                            ],
+                          ),
+                      },
+                      h,
+                    ),
+                    Input.view(
+                      {
+                        id: 'ai-base-url',
+                        type: 'url',
+                        value: model.aiBaseUrl,
+                        placeholder: 'Server default',
+                        isDisabled: isConnectionBusy,
+                        onInput: value => Message.UpdatedAiBaseUrl({ value }),
+                        toView: attributes =>
+                          h.div(
+                            [
+                              h.Class(
+                                'mb-2 flex items-center justify-between gap-4',
+                              ),
+                            ],
+                            [
+                              h.label(
+                                [
+                                  ...attributes.label,
+                                  h.Class('shrink-0 text-[11px] text-muted'),
+                                ],
+                                ['Endpoint (optional)'],
+                              ),
+                              h.input([
+                                ...attributes.input,
+                                h.Autocomplete('off'),
+                                h.AriaDescribedBy('ai-connection-help'),
+                                h.Class(
+                                  'h-7 min-w-0 w-60 max-w-[65%] rounded-[4px] border border-[#303238] bg-[#1c1e21] px-2 text-[11px] text-[#c9cbd1] placeholder:text-[#717782] focus-visible:outline-[#736687] disabled:cursor-wait disabled:opacity-50',
+                                ),
+                              ]),
+                            ],
+                          ),
+                      },
+                      h,
+                    ),
+                    h.p(
+                      [
+                        h.Id('ai-connection-help'),
+                        h.Class('mb-2 text-[10px] leading-relaxed text-muted'),
+                      ],
+                      [
+                        'Leave blank to use server defaults. API key is kept for this session only.',
+                      ],
+                    ),
                     Select.view(
                       {
                         id: 'ai-model',
                         value: model.aiModel,
-                        isDisabled: isGenerating,
+                        isDisabled: isConnectionBusy,
                         onChange: value => Message.SelectedAiModel({ value }),
                         toView: attributes =>
                           h.div(
@@ -558,7 +648,7 @@ const aiComposerView = (model: Model, h: HtmlBuilder<Message>): Html => {
                                 ['AI model'],
                               ),
                               h.div(
-                                [h.Class('relative w-40 max-w-[60%]')],
+                                [h.Class('relative w-60 max-w-[65%]')],
                                 [
                                   h.select(
                                     [
@@ -567,7 +657,7 @@ const aiComposerView = (model: Model, h: HtmlBuilder<Message>): Html => {
                                         'h-7 w-full cursor-pointer appearance-none rounded-[4px] border border-[#303238] bg-[#1c1e21] pr-6 pl-2 text-[11px] text-[#c9cbd1] transition-colors hover:border-[#50505b] disabled:cursor-wait disabled:opacity-50',
                                       ),
                                     ],
-                                    AiModel.literals.map(name =>
+                                    models.map(name =>
                                       h.keyed('option')(
                                         name,
                                         [h.Value(name)],
@@ -585,6 +675,62 @@ const aiComposerView = (model: Model, h: HtmlBuilder<Message>): Html => {
                           ),
                       },
                       h,
+                    ),
+                    h.div(
+                      [h.Class('mt-2 flex items-start justify-between gap-3')],
+                      [
+                        AiModelsState.match(model.aiModels, {
+                          Idle: () =>
+                            h.p(
+                              [
+                                h.Role('status'),
+                                h.Class('text-[10px] text-muted'),
+                              ],
+                              [
+                                'Refresh models after changing your connection settings.',
+                              ],
+                            ),
+                          Loading: () =>
+                            h.p(
+                              [
+                                h.Role('status'),
+                                h.Class(
+                                  'flex items-center gap-1.5 text-[10px] text-muted',
+                                ),
+                              ],
+                              [spinnerView(h), 'Loading models…'],
+                            ),
+                          Ready: ({ models }) =>
+                            Array.match(models, {
+                              onEmpty: () =>
+                                h.p(
+                                  [
+                                    h.Role('status'),
+                                    h.Class('text-[10px] text-muted'),
+                                  ],
+                                  [
+                                    'No models returned. You can still use the selected model.',
+                                  ],
+                                ),
+                              onNonEmpty: () => h.empty,
+                            }),
+                          Failed: ({ reason }) =>
+                            h.p(
+                              [
+                                h.Role('alert'),
+                                h.Class('text-[10px] text-[#f4a5a5]'),
+                              ],
+                              [`Could not load models: ${reason}`],
+                            ),
+                        }),
+                        button(
+                          'Refresh models',
+                          Message.ClickedRefreshAiModels(),
+                          'ml-auto shrink-0 rounded border border-[#303238] px-2 py-1 text-[10px] text-[#c9cbd1] hover:border-[#50505b] data-disabled:cursor-wait data-disabled:opacity-50',
+                          isConnectionBusy,
+                          h,
+                        ),
+                      ],
                     ),
                   ],
                 )

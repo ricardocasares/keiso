@@ -1,4 +1,4 @@
-import { Array, Duration, Option } from 'effect'
+import { Array, Duration, Option, Redacted, Schema } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
@@ -10,6 +10,7 @@ import { parseControls } from './domain/shader'
 import { shaderExamples } from './examples'
 import {
   BroadcastState,
+  FetchAiModels,
   FocusApplyGeneration,
   GenerateShader,
   RenderShader,
@@ -19,7 +20,13 @@ import {
   update,
 } from './main'
 import { Message } from './message'
-import { EngineState, GenerationState, type Model, RenderState } from './model'
+import {
+  AiModelsState,
+  EngineState,
+  GenerationState,
+  Model,
+  RenderState,
+} from './model'
 
 const initialModel = init({
   mode: 'control',
@@ -34,6 +41,10 @@ const snapshot = Snapshot.make({
 })
 const liveModel: Model = modifyFields(initialModel, {
   engine: () => EngineState.Ready(),
+  aiModels: () =>
+    AiModelsState.Ready({
+      models: ['gemma4:31b-cloud', 'qwen3.5:cloud', 'gpt-oss:20b'],
+    }),
   maybeLive: () => Option.some(snapshot),
 })
 const source = Option.getOrThrow(
@@ -44,7 +55,7 @@ const readyModel: Model = modifyFields(liveModel, {
     GenerationState.Ready({ source, preview: EngineState.Starting() }),
 })
 
-describe('mock AI generation', () => {
+describe('AI generation', () => {
   test('captures the prompt and selected model without changing the editor or live output until Apply', () => {
     const nextSnapshot = modifyFields(snapshot, {
       source: () => source,
@@ -54,21 +65,23 @@ describe('mock AI generation', () => {
     story(
       update,
       given(liveModel),
-      model(current => expect(current.aiModel).toBe('GPT')),
-      message(Message.SelectedAiModel({ value: 'Claude' })),
+      model(current => expect(current.aiModel).toBe('gemma4:31b-cloud')),
+      message(Message.SelectedAiModel({ value: 'qwen3.5:cloud' })),
       message(Message.UpdatedAiPrompt({ value: '  An aurora in the void  ' })),
       message(Message.SubmittedAiPrompt()),
       Command.expectExact(
         GenerateShader({
           prompt: 'An aurora in the void',
-          model: 'Claude',
+          model: 'qwen3.5:cloud',
+          apiKey: Redacted.make(''),
+          baseUrl: '',
           maybeSource: Option.none(),
         }),
       ),
       model(current => {
         expect(current.generation._tag).toBe('Generating')
         expect(current.aiPrompt).toBe('  An aurora in the void  ')
-        expect(current.aiModel).toBe('Claude')
+        expect(current.aiModel).toBe('qwen3.5:cloud')
         expect(current.source).toBe(snapshot.source)
         expect(current.maybeLive).toEqual(Option.some(snapshot))
       }),
@@ -134,7 +147,9 @@ describe('mock AI generation', () => {
       Command.expectExact(
         GenerateShader({
           prompt: 'Make this brighter',
-          model: 'GPT',
+          model: 'gemma4:31b-cloud',
+          apiKey: Redacted.make(''),
+          baseUrl: '',
           maybeSource: Option.some(draft),
         }),
       ),
@@ -157,7 +172,9 @@ describe('mock AI generation', () => {
       Command.expectExact(
         GenerateShader({
           prompt: 'Make this brighter',
-          model: 'GPT',
+          model: 'gemma4:31b-cloud',
+          apiKey: Redacted.make(''),
+          baseUrl: '',
           maybeSource: Option.none(),
         }),
       ),
@@ -192,14 +209,14 @@ describe('mock AI generation', () => {
     )
     const generatingModel: Model = modifyFields(liveModel, {
       aiPrompt: () => 'Aurora',
-      aiModel: () => 'Claude',
+      aiModel: () => 'qwen3.5:cloud',
       generation: () => GenerationState.Generating(),
     })
     story(
       update,
       given(generatingModel),
       message(Message.UpdatedAiPrompt({ value: 'Changed while generating' })),
-      message(Message.SelectedAiModel({ value: 'Gemini' })),
+      message(Message.SelectedAiModel({ value: 'gpt-oss:20b' })),
       message(Message.ToggledEditorCode({ isIncluded: true })),
       message(Message.SubmittedAiPrompt()),
       message(Message.ClickedApplyGeneration()),
@@ -246,7 +263,9 @@ describe('mock AI generation', () => {
       Command.expectExact(
         GenerateShader({
           prompt: 'Aurora',
-          model: 'GPT',
+          model: 'gemma4:31b-cloud',
+          apiKey: Redacted.make(''),
+          baseUrl: '',
           maybeSource: Option.none(),
         }),
       ),
@@ -293,5 +312,72 @@ describe('mock AI generation', () => {
       }),
       Command.expectNone(),
     )
+  })
+})
+
+describe('AI connection settings', () => {
+  test('loading models locks connection changes and preserves the cloud default', () => {
+    const loadingModel = modifyFields(initialModel, {
+      aiModels: () => AiModelsState.Loading(),
+    })
+    story(
+      update,
+      given(loadingModel),
+      message(Message.UpdatedAiApiKey({ value: Redacted.make('ignored') })),
+      message(
+        Message.UpdatedAiBaseUrl({ value: 'https://ignored.example/v1' }),
+      ),
+      message(Message.ClickedRefreshAiModels()),
+      model(current => expect(current).toEqual(loadingModel)),
+      Command.expectNone(),
+    )
+    story(
+      update,
+      given(initialModel),
+      message(Message.ToggledAiSettings({ isOpen: true })),
+      Command.expectExact(
+        FetchAiModels({ apiKey: Redacted.make(''), baseUrl: '' }),
+      ),
+      model(current => {
+        expect(Redacted.value(current.aiApiKey)).toBe('')
+        expect(current.aiBaseUrl).toBe('')
+        expect(current.aiModels._tag).toBe('Loading')
+      }),
+      Command.resolve(
+        FetchAiModels,
+        Message.CompletedFetchAiModels({
+          models: ['other-model', 'gemma4:31b'],
+        }),
+      ),
+      model(current => expect(current.aiModel).toBe('gemma4:31b')),
+      message(Message.CompletedFetchAiModels({ models: ['stale-model'] })),
+      message(Message.FailedFetchAiModels({ reason: 'Stale failure' })),
+      model(current => {
+        expect(current.aiModel).toBe('gemma4:31b')
+        expect(current.aiModels).toEqual(
+          AiModelsState.Ready({ models: ['other-model', 'gemma4:31b'] }),
+        )
+      }),
+      Command.expectNone(),
+    )
+  })
+
+  test('API keys are redacted in messages and omitted from serialized model snapshots', () => {
+    const apiKey = Redacted.make('private-provider-key')
+    const nextModel = update(
+      initialModel,
+      Message.UpdatedAiApiKey({ value: apiKey }),
+    ).model
+    const codec = Schema.toCodecJson(Model)
+    const snapshot = Schema.encodeSync(codec)(nextModel)
+
+    expect(Redacted.value(nextModel.aiApiKey)).toBe('private-provider-key')
+    expect(
+      JSON.stringify(Message.UpdatedAiApiKey({ value: apiKey })),
+    ).not.toContain('private-provider-key')
+    expect(JSON.stringify(snapshot)).not.toContain('private-provider-key')
+    expect(
+      Redacted.value(Schema.decodeUnknownSync(codec)(snapshot).aiApiKey),
+    ).toBe('')
   })
 })

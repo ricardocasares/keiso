@@ -1,9 +1,10 @@
-import { Array, Clock, Effect, Option, Schema } from 'effect'
-import { Command, Dom, type Runtime, Update } from 'foldkit'
+import { Array, Clock, Effect, Option, Redacted, Schema } from 'effect'
+import { Command, Dom, Http, type Runtime, Update } from 'foldkit'
 import { modifyFields } from 'foldkit/struct'
 
 import { HoverIntent, Listbox, RadioGroup } from '@foldkit/ui'
 
+import { fetchAiModels, generateShader } from './ai'
 import { bandLevel, bandsInRange, spectrumBands } from './audio'
 import { MidiSignal, matchesMidiSource } from './domain/midi'
 import { type OscillatorBinding, oscillatorLevel } from './domain/oscillator'
@@ -19,7 +20,8 @@ import { shaderExamples } from './examples'
 import { channel, editor, errorReason, renderer } from './host'
 import { Message } from './message'
 import {
-  AiModel,
+  AiApiKey,
+  AiModelsState,
   EngineState,
   Flags,
   GenerationState,
@@ -66,7 +68,10 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     exampleId: shaderExamples[0].id,
     exampleListbox: Listbox.init({ id: 'shader-examples' }),
     aiPrompt: '',
-    aiModel: 'GPT',
+    aiModel: 'gemma4:31b-cloud',
+    aiApiKey: Redacted.make(''),
+    aiBaseUrl: '',
+    aiModels: AiModelsState.Idle(),
     includesEditorCode: false,
     isAiSettingsOpen: false,
     generation: GenerationState.Idle(),
@@ -100,26 +105,50 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
 export const GenerateShader = Command.define('GenerateShader', {
   args: {
     prompt: Schema.String,
-    model: AiModel,
+    model: Schema.String,
+    apiKey: AiApiKey,
+    baseUrl: Schema.String,
     maybeSource: Schema.Option(Schema.String),
   },
   messages: [Message.CompletedGenerateShader, Message.FailedGenerateShader],
-  // ponytail: every prompt/model returns the Aurora fixture until a backend is connected.
-  execute: () =>
-    Effect.gen(function* () {
-      yield* Effect.sleep('1400 millis')
-      const aurora = Option.getOrThrow(
-        Array.findFirst(shaderExamples, example => example.id === 'aurora'),
-      )
-      return Message.CompletedGenerateShader({ source: aurora.source })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedGenerateShader({ reason: errorReason(error) }),
-        ),
+  execute: args =>
+    generateShader(args).pipe(
+      Effect.provide(Http.layer),
+      Effect.map(source => Message.CompletedGenerateShader({ source })),
+      Effect.catch(reason =>
+        Effect.succeed(Message.FailedGenerateShader({ reason })),
       ),
     ),
 })
+
+export const FetchAiModels = Command.define('FetchAiModels', {
+  args: { apiKey: AiApiKey, baseUrl: Schema.String },
+  messages: [Message.CompletedFetchAiModels, Message.FailedFetchAiModels],
+  execute: args =>
+    fetchAiModels(args).pipe(
+      Effect.provide(Http.layer),
+      Effect.map(models => Message.CompletedFetchAiModels({ models })),
+      Effect.catch(reason =>
+        Effect.succeed(Message.FailedFetchAiModels({ reason })),
+      ),
+    ),
+})
+
+const loadAiModels = (model: Model): Update.Return<Model, Message> => {
+  if (
+    model.mode !== 'control' ||
+    model.generation._tag === 'Generating' ||
+    model.aiModels._tag === 'Loading'
+  ) {
+    return { model }
+  }
+  return {
+    model: modifyFields(model, { aiModels: () => AiModelsState.Loading() }),
+    commands: [
+      FetchAiModels({ apiKey: model.aiApiKey, baseUrl: model.aiBaseUrl }),
+    ],
+  }
+}
 
 const failureDiagnostic = (error: unknown): Diagnostic => ({
   line: 1,
@@ -1174,8 +1203,54 @@ export const update = (model: Model, message: Message) =>
     }),
     SelectedAiModel: ({ value }) => ({
       model:
-        model.generation._tag !== 'Generating' && Schema.is(AiModel)(value)
+        model.generation._tag !== 'Generating' &&
+        model.aiModels._tag === 'Ready' &&
+        model.aiModels.models.includes(value)
           ? modifyFields(model, { aiModel: () => value })
+          : model,
+    }),
+    UpdatedAiApiKey: ({ value }) => ({
+      model:
+        model.generation._tag === 'Generating' ||
+        model.aiModels._tag === 'Loading'
+          ? model
+          : modifyFields(model, {
+              aiApiKey: () => value,
+              aiModels: () => AiModelsState.Idle(),
+            }),
+    }),
+    UpdatedAiBaseUrl: ({ value }) => ({
+      model:
+        model.generation._tag === 'Generating' ||
+        model.aiModels._tag === 'Loading'
+          ? model
+          : modifyFields(model, {
+              aiBaseUrl: () => value,
+              aiModels: () => AiModelsState.Idle(),
+            }),
+    }),
+    ClickedRefreshAiModels: () => loadAiModels(model),
+    CompletedFetchAiModels: ({ models }) => ({
+      model:
+        model.aiModels._tag === 'Loading'
+          ? modifyFields(model, {
+              aiModels: () => AiModelsState.Ready({ models }),
+              aiModel: current =>
+                models.includes(current)
+                  ? current
+                  : current === 'gemma4:31b-cloud' &&
+                      models.includes('gemma4:31b')
+                    ? 'gemma4:31b'
+                    : (models[0] ?? current),
+            })
+          : model,
+    }),
+    FailedFetchAiModels: ({ reason }) => ({
+      model:
+        model.aiModels._tag === 'Loading'
+          ? modifyFields(model, {
+              aiModels: () => AiModelsState.Failed({ reason }),
+            })
           : model,
     }),
     ToggledEditorCode: ({ isIncluded }) => ({
@@ -1184,15 +1259,19 @@ export const update = (model: Model, message: Message) =>
           ? model
           : modifyFields(model, { includesEditorCode: () => isIncluded }),
     }),
-    ToggledAiSettings: ({ isOpen }) => ({
-      model: modifyFields(model, { isAiSettingsOpen: () => isOpen }),
-    }),
+    ToggledAiSettings: ({ isOpen }) => {
+      const nextModel = modifyFields(model, { isAiSettingsOpen: () => isOpen })
+      return isOpen && model.aiModels._tag === 'Idle'
+        ? loadAiModels(nextModel)
+        : { model: nextModel }
+    },
     SubmittedAiPrompt: () => {
       const prompt = model.aiPrompt.trim()
       if (
         model.mode !== 'control' ||
         !prompt ||
-        model.generation._tag === 'Generating'
+        model.generation._tag === 'Generating' ||
+        model.aiModels._tag === 'Loading'
       ) {
         return { model }
       }
@@ -1205,6 +1284,8 @@ export const update = (model: Model, message: Message) =>
           GenerateShader({
             prompt,
             model: model.aiModel,
+            apiKey: model.aiApiKey,
+            baseUrl: model.aiBaseUrl,
             maybeSource: model.includesEditorCode
               ? Option.some(model.source)
               : Option.none(),

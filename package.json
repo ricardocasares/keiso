@@ -19,6 +19,7 @@
     "@codemirror/lint": "^6.9.7",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
+    "@effect/ai-openai-compat": "4.0.0-rc.117",
     "@effect/platform-browser": "4.0.0-rc.117",
     "@effect/platform-bun": "4.0.0-rc.117",
     "@foldkit/ui": "0.164.0",

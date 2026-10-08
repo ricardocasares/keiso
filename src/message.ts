@@ -6,6 +6,7 @@ import { HoverIntent, Listbox, RadioGroup } from '@foldkit/ui'
 import { MidiInput, MidiSignal } from './domain/midi'
 import { Broadcast, Snapshot } from './domain/session'
 import { Diagnostic } from './domain/shader'
+import { AiApiKey } from './model'
 
 export const Message = defineMessageUnion({
   SucceededMountRenderer: {},
@@ -19,6 +20,11 @@ export const Message = defineMessageUnion({
   GotExampleListboxMessage: { message: Listbox.Message },
   UpdatedAiPrompt: { value: Schema.String },
   SelectedAiModel: { value: Schema.String },
+  UpdatedAiApiKey: { value: AiApiKey },
+  UpdatedAiBaseUrl: { value: Schema.String },
+  ClickedRefreshAiModels: {},
+  CompletedFetchAiModels: { models: Schema.Array(Schema.String) },
+  FailedFetchAiModels: { reason: Schema.String },
   ToggledEditorCode: { isIncluded: Schema.Boolean },
   ToggledAiSettings: { isOpen: Schema.Boolean },
   SubmittedAiPrompt: {},
