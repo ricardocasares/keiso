@@ -1,13 +1,24 @@
 # keiso
 
-A browser-only WGSL VJ studio built with Foldkit, Effect, CodeMirror, and WebGPU.
+A WGSL VJ studio built with Foldkit, Effect, CodeMirror, and WebGPU.
 
 ```sh
 bun install
 bun run dev
 ```
 
-Open the localhost URL in a browser with WebGPU enabled. Deployment is static: `bun run build` produces `dist/`; serve it over HTTPS. No backend, accounts, or external runtime services are needed.
+Open the localhost URL in a browser with WebGPU enabled. The frontend build is static: `bun run build` produces `dist/`; serve it over HTTPS. The studio currently runs independently of the API.
+
+## API
+
+Run the Effect HTTP server with Bun:
+
+```sh
+bun run api
+curl -i http://localhost:3000/api/health
+```
+
+`GET /api/health` returns `204 No Content`. The contract lives in `src/api/contract.ts`, handlers in `src/api/handlers.ts`, and server composition in `src/api/server.ts`. `api/index.ts` only runs the final Effect program.
 
 ## Perform
 

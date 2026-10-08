@@ -4,12 +4,13 @@
   "type": "module",
   "scripts": {
     "dev": "portless keiso vite",
+    "api": "bun api/index.ts",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt",
     "test": "vitest run",
-    "lint": "oxlint src"
+    "lint": "oxlint src api"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -19,6 +20,7 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
     "@effect/platform-browser": "4.0.0-rc.117",
+    "@effect/platform-bun": "4.0.0-rc.117",
     "@foldkit/ui": "0.164.0",
     "@iizukak/codemirror-lang-wgsl": "^0.3.0",
     "@lezer/highlight": "^1.2.5",
@@ -32,6 +34,7 @@
     "@foldkit/oxlint-plugin": "0.15.1",
     "@foldkit/vite-plugin": "0.25.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/bun": "1.4.2",
     "@webgpu/types": "^0.1.74",
     "happy-dom": "^20.14.5",
     "oxfmt": "^0.66.0",

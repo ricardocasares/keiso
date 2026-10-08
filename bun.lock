@@ -12,6 +12,7 @@
         "@codemirror/state": "^6.7.6",
         "@codemirror/view": "^6.43.13",
         "@effect/platform-browser": "4.0.0-rc.117",
+        "@effect/platform-bun": "4.0.0-rc.117",
         "@foldkit/ui": "0.164.0",
         "@iizukak/codemirror-lang-wgsl": "^0.3.0",
         "@lezer/highlight": "^1.2.5",
@@ -25,6 +26,7 @@
         "@foldkit/oxlint-plugin": "0.15.1",
         "@foldkit/vite-plugin": "0.25.0",
         "@tailwindcss/vite": "^4.3.3",
+        "@types/bun": "1.4.2",
         "@webgpu/types": "^0.1.74",
         "happy-dom": "^20.14.5",
         "oxfmt": "^0.66.0",
@@ -133,6 +135,16 @@
       "",
       { "peerDependencies": { "effect": "^4.0.0-rc.117" } },
       "sha512-0ztUOWemk+MiEyPOXdijoghlzsvhie6tUpNPLBhDG+BRAPDaLjAIWf0QxSD7pg/Ly37FSnPb0R5qD+/h3C18Wg==",
+    ],
+
+    "@effect/platform-bun": [
+      "@effect/platform-bun@4.0.0-rc.117",
+      "",
+      {
+        "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.117" },
+        "peerDependencies": { "effect": "^4.0.0-rc.117" },
+      },
+      "sha512-jyvoxPjT9562z5Tc2gib9GB16jcgh43jhpsuNQxs9B8WJ7RB2doPBQdrYLSSWRodGPLJBKJGzToRRbJiaGblsw==",
     ],
 
     "@effect/platform-node": [
@@ -966,6 +978,13 @@
       "sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==",
     ],
 
+    "@types/bun": [
+      "@types/bun@1.4.2",
+      "",
+      { "dependencies": { "bun-types": "1.4.2" } },
+      "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ==",
+    ],
+
     "@types/chai": [
       "@types/chai@5.2.3",
       "",
@@ -1242,6 +1261,13 @@
       "",
       { "dependencies": { "@types/node": "*" } },
       "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ==",
+    ],
+
+    "bun-types": [
+      "bun-types@1.4.2",
+      "",
+      { "dependencies": { "@types/node": "*" } },
+      "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w==",
     ],
 
     "bytes": [
