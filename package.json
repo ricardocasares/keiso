@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "portless keiso vite",
-    "api": "bun api/index.ts",
+    "dev": "bun run --parallel dev:web api",
+    "dev:web": "portless keiso vite",
+    "api": "bun --env-file=.env api/index.ts",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

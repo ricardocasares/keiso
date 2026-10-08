@@ -7,11 +7,11 @@ bun install
 bun run dev
 ```
 
-Open the localhost URL in a browser with WebGPU enabled. Run `bun run api` in another terminal to enable AI generation and model loading. Vite proxies `/api` to the local API server. The frontend build is static: `bun run build` produces `dist/`; serve it over HTTPS and route `/api` to the API server when using AI.
+Open the localhost URL in a browser with WebGPU enabled. `bun run dev` starts both Vite and the API server; Vite proxies `/api` to that server, so AI generation and model loading work through the same origin. Check `/api/health` on the frontend URL for a `204` response (bare `/api` has no handler). Use `bun run dev:web` only when running the API separately. The frontend build is static: `bun run build` produces `dist/`; serve it over HTTPS and route `/api` to the API server when using AI.
 
 ## API
 
-Run the Effect HTTP server with Bun:
+To run only the Effect HTTP server with Bun (already included in `bun run dev`):
 
 ```sh
 bun run api
