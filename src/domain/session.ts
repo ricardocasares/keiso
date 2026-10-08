@@ -13,6 +13,7 @@ export type Snapshot = typeof Snapshot.Type
 
 export const Broadcast = defineTaggedUnion({
   Hello: {},
+  Revision: { revision: Schema.Natural },
   State: { snapshot: Snapshot },
   Status: { reason: Schema.String },
 })

@@ -29,6 +29,7 @@ const initialModel = init({
   mode: 'control',
   sessionId: 'microphone-test',
   startedAt: 1000,
+  maybeSavedPerformance: Option.none(),
 }).model
 const snapshot = Snapshot.make({
   source: initialModel.source,

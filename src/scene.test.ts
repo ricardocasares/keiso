@@ -38,6 +38,7 @@ const initialModel = init({
   mode: 'control',
   sessionId: 'test-session',
   startedAt: 1000,
+  maybeSavedPerformance: Option.none(),
 }).model
 const snapshot = Snapshot.make({
   source: initialModel.source,

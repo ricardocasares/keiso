@@ -22,6 +22,7 @@ const initialModel = init({
   mode: 'control',
   sessionId: 'oscillator-test',
   startedAt: 1000,
+  maybeSavedPerformance: Option.none(),
 }).model
 const source = `// @slider first 0 10 4 .1
 // @slider second 0 10 4 .1

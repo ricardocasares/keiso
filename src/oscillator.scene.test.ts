@@ -1,3 +1,4 @@
+import { Option } from 'effect'
 import {
   Command,
   Mount,
@@ -39,6 +40,7 @@ test('a control can configure an oscillator and return to manual input', () => {
     mode: 'control',
     sessionId: 'oscillator-scene',
     startedAt: 1000,
+    maybeSavedPerformance: Option.none(),
   }).model
   const snapshot = Snapshot.make({
     source: initialModel.source,

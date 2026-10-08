@@ -59,6 +59,7 @@ test('oscillator subscription emits clock timestamps only while a live oscillato
     mode: 'control',
     sessionId: 'clock-test',
     startedAt: 1000,
+    maybeSavedPerformance: Option.none(),
   }).model
   const live = modifyFields(initial, {
     engine: () => EngineState.Ready(),

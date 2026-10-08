@@ -43,7 +43,12 @@ import {
 import { Message } from './message'
 
 const initialModel = modifyFields(
-  init({ mode: 'control', sessionId: 'ai-scene', startedAt: 1000 }).model,
+  init({
+    mode: 'control',
+    sessionId: 'ai-scene',
+    startedAt: 1000,
+    maybeSavedPerformance: Option.none(),
+  }).model,
   { source: source => `${source}\n// Custom draft`, exampleId: () => '' },
 )
 const snapshot = Snapshot.make({
@@ -160,10 +165,10 @@ test('compact AI controls disable during generation, preview on hover, and apply
       Message.CompletedFocusApplyGeneration(),
     ),
     expect(prompt).toBeEnabled(),
-    expect(prompt).toHaveValue(''),
+    expect(prompt).toHaveValue('I want an aurora floating in the void'),
     expect(includeCode).toBeEnabled(),
     expect(modelPicker).toBeEnabled(),
-    expect(send).toBeDisabled(),
+    expect(send).toBeEnabled(),
     expect(apply).toBeEnabled(),
     keydown(configuration, 'Escape'),
     expect(configuration).toBeAbsent(),
@@ -189,6 +194,7 @@ test('compact AI controls disable during generation, preview on hover, and apply
     Mount.expectEnded(MountGeneratedPreview),
     expect(preview).toBeAbsent(),
     expect(apply).toBeDisabled(),
+    expect(prompt).toHaveValue('I want an aurora floating in the void'),
     Command.expectExact(
       UpdateEditor({ source, diagnostics: [] }),
       RenderShader({ snapshot: nextSnapshot }),
@@ -202,11 +208,13 @@ test('compact AI controls disable during generation, preview on hover, and apply
       }),
     ),
     acknowledgeRender,
+    expect(prompt).toHaveValue('I want an aurora floating in the void'),
+    expect(apply).toBeDisabled(),
     expect(text('Draft is live')).toExist(),
   )
 })
 
-test('form submission supports keyboard use and focus previews close on Escape, including GPU failure', () => {
+test('form submission supports keyboard use and failed previews keep the prompt for retry', () => {
   scene(
     { update, view },
     given(initialModel),
@@ -239,14 +247,9 @@ test('form submission supports keyboard use and focus previews close on Escape, 
     Command.expectNone(),
     Mount.resolve(
       MountGeneratedPreview,
-      Message.FailedMountGeneratedPreview({
-        source,
-        reason: 'Preview GPU unavailable',
-      }),
+      Message.SucceededMountGeneratedPreview({ source }),
     ),
     expect(preview).toExist(),
-    expect(text('Preview unavailable')).toExist(),
-    expect(text('Preview GPU unavailable')).toExist(),
     expect(apply).toBeEnabled(),
     expect(text('Draft is live')).toExist(),
     keydown(apply, 'Escape'),
@@ -257,13 +260,76 @@ test('form submission supports keyboard use and focus previews close on Escape, 
     focus(apply),
     Mount.resolve(
       MountGeneratedPreview,
-      Message.SucceededMountGeneratedPreview({ source }),
+      Message.FailedMountGeneratedPreview({ source, reason: 'Invalid WGSL' }),
     ),
-    expect(preview).toExist(),
-    expect(text('Preview unavailable')).toBeAbsent(),
-    keydown(apply, 'Escape'),
     Mount.expectEnded(MountGeneratedPreview),
     expect(preview).toBeAbsent(),
+    expect(role('button', { name: 'Try again' })).toBeDisabled(),
+    expect(role('button', { name: 'Try again' })).toHaveText('Try again'),
+    hover(role('button', { name: 'Try again' })),
+    expect(role('button', { name: 'Try again' })).toHaveAttr(
+      'title',
+      'Invalid WGSL',
+    ),
+    expect(prompt).toHaveValue('Aurora'),
+    expect(send).toBeEnabled(),
+    expect(text('Draft is live')).toExist(),
+    Command.expectNone(),
+  )
+})
+
+test('a failed apply keeps its prompt and exposes the error on the disabled retry button', () => {
+  const nextSnapshot = modifyFields(snapshot, {
+    source: () => source,
+    controls: () => parseControls(source).controls,
+    revision: () => 2,
+  })
+  scene(
+    { update, view },
+    given(initialModel),
+    mountEditor,
+    updateEditor,
+    mountRenderer,
+    renderInitial,
+    acknowledgeRender,
+    type(prompt, 'Aurora'),
+    click(send),
+    Command.resolve(
+      GenerateShader,
+      Message.CompletedGenerateShader({ source }),
+    ),
+    Command.resolve(
+      FocusApplyGeneration,
+      Message.CompletedFocusApplyGeneration(),
+    ),
+    click(apply),
+    updateEditor,
+    expect(apply).toBeDisabled(),
+    expect(prompt).toHaveValue('Aurora'),
+    Command.resolve(
+      RenderShader,
+      Message.CompletedRenderShader({
+        snapshot: nextSnapshot,
+        diagnostics: [
+          {
+            id: 'compile',
+            line: 1,
+            column: 1,
+            severity: 'error',
+            message: 'GPU allocation failed',
+          },
+        ],
+      }),
+    ),
+    Command.resolve(ShowDiagnostics, Message.CompletedShowDiagnostics()),
+    expect(role('button', { name: 'Try again' })).toBeDisabled(),
+    hover(role('button', { name: 'Try again' })),
+    expect(role('button', { name: 'Try again' })).toHaveAttr(
+      'title',
+      'GPU allocation failed',
+    ),
+    expect(prompt).toHaveValue('Aurora'),
+    expect(send).toBeEnabled(),
     Command.expectNone(),
   )
 })
@@ -323,6 +389,12 @@ test('optional connection settings load provider models and are forwarded to gen
       }),
     ),
     expect(role('alert')).toHaveText('The provider rejected the API key.'),
+    expect(role('button', { name: 'Try again' })).toBeDisabled(),
+    expect(role('button', { name: 'Try again' })).toHaveAttr(
+      'title',
+      'The provider rejected the API key.',
+    ),
+    expect(prompt).toHaveValue('Aurora'),
     expect(apiKey).toBeEnabled(),
     expect(endpoint).toBeEnabled(),
     expect(send).toBeEnabled(),

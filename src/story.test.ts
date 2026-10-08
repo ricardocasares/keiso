@@ -25,6 +25,7 @@ const initialModel = init({
   mode: 'control',
   sessionId: 'test-session',
   startedAt: 1000,
+  maybeSavedPerformance: Option.none(),
 }).model
 const liveSnapshot = Snapshot.make({
   source: initialModel.source,

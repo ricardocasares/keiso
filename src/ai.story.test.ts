@@ -6,7 +6,7 @@ import { describe, expect, test } from 'vitest'
 import { HoverIntent } from '@foldkit/ui'
 
 import { Snapshot } from './domain/session'
-import { parseControls } from './domain/shader'
+import { Diagnostic, parseControls } from './domain/shader'
 import { shaderExamples } from './examples'
 import {
   BroadcastState,
@@ -32,6 +32,7 @@ const initialModel = init({
   mode: 'control',
   sessionId: 'ai-story',
   startedAt: 1000,
+  maybeSavedPerformance: Option.none(),
 }).model
 const snapshot = Snapshot.make({
   source: initialModel.source,
@@ -99,7 +100,7 @@ describe('AI generation', () => {
         expect(current.generation).toEqual(
           GenerationState.Ready({ source, preview: EngineState.Starting() }),
         )
-        expect(current.aiPrompt).toBe('')
+        expect(current.aiPrompt).toBe('  An aurora in the void  ')
         expect(current.source).toBe(snapshot.source)
         expect(current.maybeLive).toEqual(Option.some(snapshot))
       }),
@@ -112,7 +113,8 @@ describe('AI generation', () => {
         expect(current.source).toBe(source)
         expect(current.exampleId).toBe('')
         expect(current.draftGeneration).toBe(liveModel.draftGeneration + 1)
-        expect(current.generation._tag).toBe('Idle')
+        expect(current.generation._tag).toBe('Ready')
+        expect(current.aiPrompt).toBe('  An aurora in the void  ')
         expect(current.render._tag).toBe('Compiling')
         expect(current.maybeLive).toEqual(Option.some(snapshot))
       }),
@@ -128,9 +130,11 @@ describe('AI generation', () => {
         [BroadcastState, Message.CompletedBroadcastState()],
         [ShowDiagnostics, Message.CompletedShowDiagnostics()],
       ),
-      model(current =>
-        expect(current.maybeLive).toEqual(Option.some(nextSnapshot)),
-      ),
+      model(current => {
+        expect(current.maybeLive).toEqual(Option.some(nextSnapshot))
+        expect(current.generation._tag).toBe('Idle')
+        expect(current.aiPrompt).toBe('  An aurora in the void  ')
+      }),
     )
   })
 
@@ -308,6 +312,78 @@ describe('AI generation', () => {
         expect(current.generation).toEqual(
           GenerationState.Ready({ source, preview: EngineState.Ready() }),
         )
+        expect(current.maybeLive).toEqual(Option.some(snapshot))
+      }),
+      Command.expectNone(),
+    )
+  })
+
+  test('a preview failure keeps the prompt and live shader and cannot be applied or revived by stale results', () => {
+    story(
+      update,
+      given(modifyFields(readyModel, { aiPrompt: () => 'Aurora' })),
+      message(
+        Message.FailedMountGeneratedPreview({ source, reason: 'Invalid WGSL' }),
+      ),
+      message(Message.ClickedApplyGeneration()),
+      message(Message.SucceededMountGeneratedPreview({ source })),
+      model(current => {
+        expect(current.generation).toEqual(
+          GenerationState.Failed({ reason: 'Invalid WGSL' }),
+        )
+        expect(current.aiPrompt).toBe('Aurora')
+        expect(current.source).toBe(snapshot.source)
+        expect(current.maybeLive).toEqual(Option.some(snapshot))
+      }),
+      Command.expectNone(),
+    )
+  })
+
+  test('a failed apply preserves the next prompt and live shader, ignoring a preview failure during compilation', () => {
+    const nextSnapshot = modifyFields(snapshot, {
+      source: () => source,
+      controls: () => parseControls(source).controls,
+      revision: () => 2,
+    })
+    const diagnostics = [
+      Diagnostic.make({
+        id: 'compile',
+        line: 1,
+        column: 1,
+        severity: 'error',
+        message: 'GPU allocation failed',
+      }),
+    ]
+    story(
+      update,
+      given(modifyFields(readyModel, { aiPrompt: () => 'Aurora' })),
+      message(Message.UpdatedAiPrompt({ value: 'My next prompt' })),
+      message(Message.ClickedApplyGeneration()),
+      model(current => {
+        expect(current.generation._tag).toBe('Ready')
+        expect(
+          update(
+            current,
+            Message.FailedMountGeneratedPreview({
+              source,
+              reason: 'Late preview failure',
+            }),
+          ).model,
+        ).toEqual(current)
+      }),
+      Command.resolve(UpdateEditor, Message.CompletedUpdateEditor()),
+      Command.resolve(
+        RenderShader,
+        Message.CompletedRenderShader({ snapshot: nextSnapshot, diagnostics }),
+      ),
+      Command.expectExact(ShowDiagnostics({ source, diagnostics })),
+      Command.resolve(ShowDiagnostics, Message.CompletedShowDiagnostics()),
+      message(Message.ClickedApplyGeneration()),
+      model(current => {
+        expect(current.generation).toEqual(
+          GenerationState.Failed({ reason: 'GPU allocation failed' }),
+        )
+        expect(current.aiPrompt).toBe('My next prompt')
         expect(current.maybeLive).toEqual(Option.some(snapshot))
       }),
       Command.expectNone(),

@@ -60,6 +60,15 @@ export const MicrophoneBinding = Schema.Struct({
   maybeColor: Schema.Option(Schema.Number),
 })
 export type MicrophoneBinding = typeof MicrophoneBinding.Type
+export const SavedPerformance = Schema.Struct({
+  sessionId: Schema.String,
+  snapshot: Snapshot,
+  microphoneBindings: Schema.Array(MicrophoneBinding),
+  oscillatorBindings: Schema.Array(OscillatorBinding),
+  midiBindings: Schema.Array(MidiBinding),
+  isMicrophoneEnabled: Schema.Boolean,
+})
+export type SavedPerformance = typeof SavedPerformance.Type
 export { OscillatorBinding } from './domain/oscillator'
 export const SpectrumDrag = defineTaggedUnion({
   Idle: {},
@@ -73,6 +82,7 @@ export const Flags = Schema.Struct({
   mode: Schema.Literals(['control', 'projection']),
   sessionId: Schema.String,
   startedAt: Schema.Number,
+  maybeSavedPerformance: Schema.Option(SavedPerformance),
 })
 export type Flags = typeof Flags.Type
 export const Model = Schema.Struct({

@@ -242,6 +242,13 @@ const generatedPreviewView = (model: Model, h: HtmlBuilder<Message>): Html => {
 const applyGenerationView = (model: Model, h: HtmlBuilder<Message>): Html => {
   const isGenerating = model.generation._tag === 'Generating'
   const isReady = model.generation._tag === 'Ready'
+  const isFailed = model.generation._tag === 'Failed'
+  const title =
+    model.generation._tag === 'Failed'
+      ? model.generation.reason
+      : isReady
+        ? 'Preview and apply generated visualization'
+        : 'Generate a visualization to apply'
   const isDisabled =
     !isReady ||
     model.engine._tag !== 'Ready' ||
@@ -270,22 +277,22 @@ const applyGenerationView = (model: Model, h: HtmlBuilder<Message>): Html => {
                       h.AriaLabel(
                         isGenerating
                           ? 'Generating'
-                          : 'Apply generated visualization',
+                          : isFailed
+                            ? 'Try again'
+                            : 'Apply generated visualization',
                       ),
                       h.AriaExpanded(isReady && isVisible),
                       ...(isReady && isVisible
                         ? [h.AriaControls('ai-generated-preview')]
                         : []),
-                      h.Title(
-                        isReady
-                          ? 'Preview and apply generated visualization'
-                          : 'Generate a visualization to apply',
-                      ),
+                      h.Title(title),
                       h.Class(
                         `flex h-7 min-w-[52px] items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors data-disabled:cursor-not-allowed ${isGenerating ? 'bg-[#202228] text-[#a9adb7]' : isDisabled ? 'bg-[#1c1e23] text-[#626873]' : 'bg-[#30293e] text-[#ded0ff] hover:bg-[#3e3353]'}`,
                       ),
                     ],
-                    isGenerating ? [spinnerView(h), 'Generating'] : ['Apply'],
+                    isGenerating
+                      ? [spinnerView(h), 'Generating']
+                      : [isFailed ? 'Try again' : 'Apply'],
                   ),
               },
               h,

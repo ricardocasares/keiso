@@ -33,6 +33,7 @@ import {
   SpectrumDrag,
   Validation,
 } from './model'
+import { loadPerformance } from './persistence'
 import { ExampleListbox, WaveformRadioGroup } from './view'
 
 export { Message } from './message'
@@ -43,22 +44,34 @@ export { view } from './view'
 
 export const flags = Effect.gen(function* () {
   const startedAt = yield* Clock.currentTimeMillis
+  const maybeSaved = yield* loadPerformance
   return yield* Effect.sync(() => {
     const parameters = new URLSearchParams(window.location.search)
     const session = parameters.get('session')
+    const mode =
+      parameters.get('view') === 'projection' && session
+        ? 'projection'
+        : 'control'
+    const maybeSavedPerformance = Option.filter(
+      maybeSaved,
+      saved => !session || saved.sessionId === session,
+    )
     return Flags.make({
-      mode:
-        parameters.get('view') === 'projection' && session
-          ? 'projection'
-          : 'control',
-      sessionId: session || crypto.randomUUID(),
+      mode,
+      sessionId:
+        session ||
+        Option.match(maybeSavedPerformance, {
+          onNone: () => crypto.randomUUID(),
+          onSome: saved => saved.sessionId,
+        }),
       startedAt,
+      maybeSavedPerformance,
     })
   })
 })
 
-export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
-  model: Model.make({
+export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
+  const initialModel = Model.make({
     mode: flags.mode,
     sessionId: flags.sessionId,
     startedAt: flags.startedAt,
@@ -97,8 +110,53 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => ({
     maybeSelectedControl: Option.none(),
     spectrum: [],
     spectrumDrag: SpectrumDrag.Idle(),
-  }),
-})
+  })
+  return {
+    model: Option.match(flags.maybeSavedPerformance, {
+      onNone: () => initialModel,
+      onSome: saved =>
+        modifyFields(initialModel, {
+          startedAt: () => saved.snapshot.startedAt,
+          source: () => saved.snapshot.source,
+          exampleId: () =>
+            shaderExamples.find(
+              example => example.source === saved.snapshot.source,
+            )?.id ?? '',
+          maybeLive: () =>
+            flags.mode === 'control'
+              ? Option.some(saved.snapshot)
+              : Option.none(),
+          maybeIncoming: () =>
+            flags.mode === 'projection'
+              ? Option.some(saved.snapshot)
+              : Option.none(),
+          microphoneBindings: () =>
+            flags.mode === 'control' ? saved.microphoneBindings : [],
+          oscillatorBindings: () =>
+            flags.mode === 'control' ? saved.oscillatorBindings : [],
+          midiBindings: () =>
+            flags.mode === 'control'
+              ? saved.midiBindings.map(binding =>
+                  modifyFields(binding, {
+                    maybePendingValue: () => Option.none(),
+                  }),
+                )
+              : [],
+          microphone: () =>
+            flags.mode === 'control' && saved.isMicrophoneEnabled
+              ? MicrophoneState.Starting()
+              : MicrophoneState.Idle(),
+          midi: () =>
+            flags.mode === 'control' &&
+            saved.midiBindings.some(binding =>
+              Option.isSome(binding.maybeSource),
+            )
+              ? MidiState.Starting()
+              : MidiState.Idle(),
+        }),
+    }),
+  }
+}
 
 // COMMAND
 
@@ -114,9 +172,29 @@ export const GenerateShader = Command.define('GenerateShader', {
   execute: args =>
     generateShader(args).pipe(
       Effect.provide(Http.layer),
+      Effect.tap(source =>
+        renderer().pipe(
+          Effect.flatMap(value =>
+            Effect.tryPromise({
+              try: () => value.validate(source),
+              catch: errorReason,
+            }),
+          ),
+          Effect.flatMap(diagnostics => {
+            const errors = diagnostics.filter(
+              ({ severity }) => severity === 'error',
+            )
+            return Array.isArrayEmpty(errors)
+              ? Effect.void
+              : Effect.fail(errors.map(({ message }) => message).join('\n'))
+          }),
+        ),
+      ),
       Effect.map(source => Message.CompletedGenerateShader({ source })),
       Effect.catch(reason =>
-        Effect.succeed(Message.FailedGenerateShader({ reason })),
+        Effect.succeed(
+          Message.FailedGenerateShader({ reason: errorReason(reason) }),
+        ),
       ),
     ),
 })
@@ -342,7 +420,7 @@ const foldExampleListbox = Update.foldChild({
 const foldAiPreview = Update.foldChild({
   update: HoverIntent.update,
   read: (model: Model) =>
-    model.generation._tag === 'Ready'
+    model.generation._tag === 'Ready' && model.render._tag !== 'Compiling'
       ? Option.some(model.aiPreview)
       : Option.none(),
   write: (model, nextAiPreview) =>
@@ -444,14 +522,36 @@ const applyIncoming = (model: Model, snapshot: Snapshot): UpdateReturn => {
 const completedRender =
   (model: Model) =>
   ({
-    snapshot,
+    snapshot: renderedSnapshot,
     diagnostics,
   }: typeof Message.CompletedRenderShader.Type): UpdateReturn => {
+    const snapshot =
+      model.mode === 'control'
+        ? modifyFields(renderedSnapshot, {
+            revision: revision =>
+              Option.match(model.maybeLive, {
+                onNone: () => revision,
+                onSome: live =>
+                  revision < live.revision ? live.revision + 1 : revision,
+              }),
+          })
+        : renderedSnapshot
     const isCurrentDraft = model.source === snapshot.source
     const completedModel = modifyFields(model, {
       render: () => RenderState.Idle(),
       validation: validation =>
         isCurrentDraft ? Validation.Checked({ diagnostics }) : validation,
+      generation: generation =>
+        generation._tag === 'Ready' && generation.source === snapshot.source
+          ? hasErrors(diagnostics)
+            ? GenerationState.Failed({
+                reason: diagnostics
+                  .filter(({ severity }) => severity === 'error')
+                  .map(({ message }) => message)
+                  .join('\n'),
+              })
+            : GenerationState.Idle()
+          : generation,
     })
     if (hasErrors(diagnostics)) {
       const failedModel = modifyFields(completedModel, {
@@ -625,7 +725,53 @@ const receiveBroadcast =
                 ],
               }),
             })
-          : { model },
+          : {
+              model,
+              commands: [
+                BroadcastState({
+                  broadcast: Broadcast.Revision({
+                    revision: Math.max(
+                      Option.match(model.maybeLive, {
+                        onNone: () => 0,
+                        onSome: snapshot => snapshot.revision,
+                      }),
+                      Option.match(model.maybeIncoming, {
+                        onNone: () => 0,
+                        onSome: snapshot => snapshot.revision,
+                      }),
+                    ),
+                  }),
+                }),
+              ],
+            },
+      Revision: ({ revision }) =>
+        model.mode !== 'control'
+          ? { model }
+          : Option.match(model.maybeLive, {
+              onNone: () => ({ model }),
+              onSome: live => {
+                if (revision < live.revision) {
+                  return { model }
+                }
+                const snapshot = modifyFields(live, {
+                  revision: () => revision + 1,
+                })
+                const resumedModel = modifyFields(model, {
+                  maybeLive: () => Option.some(snapshot),
+                })
+                return model.engine._tag === 'Ready' &&
+                  model.render._tag !== 'Compiling'
+                  ? {
+                      model: resumedModel,
+                      commands: [
+                        BroadcastState({
+                          broadcast: Broadcast.State({ snapshot }),
+                        }),
+                      ],
+                    }
+                  : { model: resumedModel }
+              },
+            }),
       State: ({ snapshot }) =>
         model.mode === 'projection'
           ? applyIncoming(model, snapshot)
@@ -1173,18 +1319,23 @@ export const update = (model: Model, message: Message) =>
     }),
     FailedMountEditor: ({ reason }) => notice(model, reason),
     SucceededMountChannel: () =>
-      model.mode === 'projection' && model.engine._tag === 'Failed'
+      model.mode === 'control'
         ? {
             model,
-            commands: [
-              BroadcastState({
-                broadcast: Broadcast.Status({
-                  reason: `Projection unavailable: ${model.engine.reason}`,
-                }),
-              }),
-            ],
+            commands: [BroadcastState({ broadcast: Broadcast.Hello() })],
           }
-        : { model },
+        : model.engine._tag === 'Failed'
+          ? {
+              model,
+              commands: [
+                BroadcastState({
+                  broadcast: Broadcast.Status({
+                    reason: `Projection unavailable: ${model.engine.reason}`,
+                  }),
+                }),
+              ],
+            }
+          : { model },
     FailedMountChannel: ({ reason }) => notice(model, reason),
     UpdatedSource: ({ source }) => ({
       model: modifyFields(model, {
@@ -1297,7 +1448,6 @@ export const update = (model: Model, message: Message) =>
       model.generation._tag === 'Generating'
         ? {
             model: modifyFields(model, {
-              aiPrompt: () => '',
               generation: () =>
                 GenerationState.Ready({
                   source,
@@ -1332,7 +1482,8 @@ export const update = (model: Model, message: Message) =>
             source: () => source,
             draftGeneration: generation => generation + 1,
             exampleId: () => '',
-            generation: () => GenerationState.Idle(),
+            aiPreview: () =>
+              HoverIntent.init({ openDelay: 0, closeDelay: 220 }),
             validation: () => Validation.Checking(),
           }),
           commands: [UpdateEditor({ source, diagnostics: [] })],
@@ -1344,7 +1495,9 @@ export const update = (model: Model, message: Message) =>
     SucceededMountGeneratedPreview: ({ source }) => ({
       model: modifyFields(model, {
         generation: generation =>
-          generation._tag === 'Ready' && generation.source === source
+          generation._tag === 'Ready' &&
+          generation.source === source &&
+          model.render._tag !== 'Compiling'
             ? modifyFields(generation, { preview: () => EngineState.Ready() })
             : generation,
       }),
@@ -1352,10 +1505,10 @@ export const update = (model: Model, message: Message) =>
     FailedMountGeneratedPreview: ({ source, reason }) => ({
       model: modifyFields(model, {
         generation: generation =>
-          generation._tag === 'Ready' && generation.source === source
-            ? modifyFields(generation, {
-                preview: () => EngineState.Failed({ reason }),
-              })
+          generation._tag === 'Ready' &&
+          generation.source === source &&
+          model.render._tag !== 'Compiling'
+            ? GenerationState.Failed({ reason })
             : generation,
       }),
     }),
@@ -1590,6 +1743,8 @@ export const update = (model: Model, message: Message) =>
     FailedUpdateEditor: ({ reason }) => notice(model, reason),
     CompletedBroadcastState: () => ({ model }),
     FailedBroadcastState: ({ reason }) => notice(model, reason),
+    CompletedSavePerformance: () => ({ model }),
+    FailedSavePerformance: ({ reason }) => notice(model, reason),
     ClickedProjection: () => ({
       model,
       commands: [OpenProjection({ sessionId: model.sessionId })],

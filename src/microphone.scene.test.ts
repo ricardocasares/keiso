@@ -1,4 +1,4 @@
-import { Array } from 'effect'
+import { Array, Option } from 'effect'
 import {
   Command,
   Mount,
@@ -37,6 +37,7 @@ const initialModel = modifyFields(
     mode: 'control',
     sessionId: 'microphone-scene',
     startedAt: 1000,
+    maybeSavedPerformance: Option.none(),
   }).model,
   { source: () => '// @slider speed 0 3 0.7 0.01' },
 )

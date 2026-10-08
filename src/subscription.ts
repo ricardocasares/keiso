@@ -1,13 +1,52 @@
 import { Array, Clock, Effect, Option, Schema, Stream } from 'effect'
 import { Subscription } from 'foldkit'
+import { modifyFields } from 'foldkit/struct'
 
 import { streamMicrophone } from './audio'
 import { errorReason, renderer, streamChannel } from './host'
 import { Message } from './message'
 import { streamMidi } from './midi'
-import type { Model } from './model'
+import { type Model, SavedPerformance } from './model'
+import { samePerformanceSettings, savePerformance } from './persistence'
 
 export const subscriptions = Subscription.make<Model, Message>()(entry => ({
+  performance: entry(
+    { maybePerformance: Schema.Option(SavedPerformance) },
+    {
+      modelToDependencies: model => ({
+        maybePerformance:
+          model.mode === 'control' && model.engine._tag === 'Ready'
+            ? Option.map(model.maybeLive, snapshot =>
+                SavedPerformance.make({
+                  sessionId: model.sessionId,
+                  snapshot,
+                  microphoneBindings: model.microphoneBindings,
+                  oscillatorBindings: model.oscillatorBindings,
+                  midiBindings: model.midiBindings.map(binding =>
+                    modifyFields(binding, {
+                      maybePendingValue: () => Option.none(),
+                    }),
+                  ),
+                  isMicrophoneEnabled:
+                    model.microphone._tag === 'Starting' ||
+                    model.microphone._tag === 'Ready',
+                }),
+              )
+            : Option.none(),
+      }),
+      keepAliveEquivalence: (first, second) =>
+        samePerformanceSettings(
+          first.maybePerformance,
+          second.maybePerformance,
+        ),
+      dependenciesToStream: ({ maybePerformance }, _readDependencies) =>
+        Option.match(maybePerformance, {
+          onNone: () => Stream.empty,
+          onSome: performance =>
+            Stream.fromEffect(savePerformance(performance)),
+        }),
+    },
+  ),
   midi: entry(
     { maybeSession: Schema.Option(Schema.Number) },
     {

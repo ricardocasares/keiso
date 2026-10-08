@@ -1,4 +1,4 @@
-import { Array } from 'effect'
+import { Array, Option } from 'effect'
 import {
   Command,
   Mount,
@@ -36,6 +36,7 @@ test('Slider and color inputs sync live values and Reset restores defaults', () 
     mode: 'control',
     sessionId: 'controls-scene',
     startedAt: 1000,
+    maybeSavedPerformance: Option.none(),
   }).model
   const initialModel = modifyFields(baseModel, {
     source: () => '// @color sky #AABBCC\n// @slider speed 0 3 0.7 0.01',

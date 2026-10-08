@@ -107,6 +107,8 @@ export const Message = defineMessageUnion({
   FailedUpdateEditor: { reason: Schema.String },
   CompletedBroadcastState: {},
   FailedBroadcastState: { reason: Schema.String },
+  CompletedSavePerformance: {},
+  FailedSavePerformance: { reason: Schema.String },
   ClickedProjection: {},
   CompletedOpenProjection: {},
   FailedOpenProjection: { reason: Schema.String },

@@ -35,6 +35,7 @@ const base = init({
   mode: 'control',
   sessionId: 'midi-scene',
   startedAt: 1000,
+  maybeSavedPerformance: Option.none(),
 }).model
 const source = '// @slider speed 0 10 4 .1'
 const snapshot = Snapshot.make({

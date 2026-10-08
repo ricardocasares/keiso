@@ -22,6 +22,7 @@ const initial = init({
   mode: 'control',
   sessionId: 'midi-test',
   startedAt: 1000,
+  maybeSavedPerformance: Option.none(),
 }).model
 const source = '// @slider speed -2 8 3 .5\n// @color sky #224466'
 const snapshot = Snapshot.make({
