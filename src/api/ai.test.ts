@@ -87,7 +87,7 @@ test.each([
     },
     url: 'http://localhost:11434/v1/chat/completions',
     authorization: 'Bearer server-key',
-    model: 'gemma4:31b-cloud',
+    model: 'gemma4:31b',
   },
 ])('generate uses configured defaults at $url', async settings => {
   const { handler, requests } = makeApi(settings.env)

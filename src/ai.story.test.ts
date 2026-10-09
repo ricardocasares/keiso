@@ -44,7 +44,7 @@ const liveModel: Model = modifyFields(initialModel, {
   engine: () => EngineState.Ready(),
   aiModels: () =>
     AiModelsState.Ready({
-      models: ['gemma4:31b-cloud', 'qwen3.5:cloud', 'gpt-oss:20b'],
+      models: ['gemma4:31b', 'qwen3.5:cloud', 'gpt-oss:20b'],
     }),
   maybeLive: () => Option.some(snapshot),
 })
@@ -66,7 +66,7 @@ describe('AI generation', () => {
     story(
       update,
       given(liveModel),
-      model(current => expect(current.aiModel).toBe('gemma4:31b-cloud')),
+      model(current => expect(current.aiModel).toBe('gemma4:31b')),
       message(Message.SelectedAiModel({ value: 'qwen3.5:cloud' })),
       message(Message.UpdatedAiPrompt({ value: '  An aurora in the void  ' })),
       message(Message.SubmittedAiPrompt()),
@@ -151,7 +151,7 @@ describe('AI generation', () => {
       Command.expectExact(
         GenerateShader({
           prompt: 'Make this brighter',
-          model: 'gemma4:31b-cloud',
+          model: 'gemma4:31b',
           apiKey: Redacted.make(''),
           baseUrl: '',
           maybeSource: Option.some(draft),
@@ -176,7 +176,7 @@ describe('AI generation', () => {
       Command.expectExact(
         GenerateShader({
           prompt: 'Make this brighter',
-          model: 'gemma4:31b-cloud',
+          model: 'gemma4:31b',
           apiKey: Redacted.make(''),
           baseUrl: '',
           maybeSource: Option.none(),
@@ -267,7 +267,7 @@ describe('AI generation', () => {
       Command.expectExact(
         GenerateShader({
           prompt: 'Aurora',
-          model: 'gemma4:31b-cloud',
+          model: 'gemma4:31b',
           apiKey: Redacted.make(''),
           baseUrl: '',
           maybeSource: Option.none(),

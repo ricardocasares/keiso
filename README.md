@@ -39,7 +39,7 @@ OPENAI_BASE_URL=https://ollama.com/v1
 
 `OPENAI_BASE_URL` is optional and defaults to Ollama Cloud at `https://ollama.com/v1`. `OPENAI_API_KEY` is optional for providers that do not require authentication; Ollama Cloud generation requires a key. Neither setting is exposed to the frontend.
 
-`POST /api/ai/generate` accepts JSON with a required, nonblank `prompt`, optional `model` (default `gemma4:31b-cloud`), and optional `baseUrl`. It returns the complete response as `{ "text": "..." }`. The server adds a system message describing the WGSL host, slider/color annotations, and source-only output rules from `src/api/shader-prompt.ts`; the user's request and optional editor source remain in a separate user message.
+`POST /api/ai/generate` accepts JSON with a required, nonblank `prompt`, optional `model` (default `gemma4:31b`), and optional `baseUrl`. It returns the complete response as `{ "text": "..." }`. The server adds a system message describing the WGSL host, slider/color annotations, and source-only output rules from `src/api/shader-prompt.ts`; the user's request and optional editor source remain in a separate user message.
 
 ```sh
 curl http://localhost:3000/api/ai/generate \
@@ -64,7 +64,7 @@ curl --get http://localhost:3000/api/ai/models \
 
 Base URLs must include the provider's API prefix (usually `/v1`) and cannot contain embedded credentials, query parameters, or fragments. A different base URL receives only the request's key; the server key is used only for the configured base URL. Local Ollama works with `baseUrl: "http://localhost:11434/v1"`, an installed model name, and no key.
 
-Ollama's [direct cloud API](https://docs.ollama.com/api/openai-compatibility) uses `gemma4:31b`. The requested default alias `gemma4:31b-cloud` is translated to that ID only when calling `https://ollama.com/v1`; listed model IDs are returned unchanged.
+Ollama's [direct cloud API](https://docs.ollama.com/api/openai-compatibility) uses `gemma4:31b`. The requested default alias `gemma4:31b` is translated to that ID only when calling `https://ollama.com/v1`; listed model IDs are returned unchanged.
 
 Invalid inputs return `400`; provider or malformed upstream responses return a sanitized `502`; requests exceeding two minutes return `504`. Upstream redirects are rejected. The studio calls these endpoints through the same origin; provider credentials stay on the server unless explicitly supplied in AI settings.
 

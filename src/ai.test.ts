@@ -11,7 +11,7 @@ import { fetchAiModels, generateShader } from './ai'
 
 const defaults = {
   prompt: 'Make colorful waves',
-  model: 'gemma4:31b-cloud',
+  model: 'gemma4:31b',
   apiKey: Redacted.make(''),
   baseUrl: '',
   maybeSource: Option.none<string>(),
@@ -48,7 +48,7 @@ test('generation sends the user request and defaults to the same-origin API', as
   expect(requests[0]?.method).toBe('POST')
   expect(requests[0]?.headers['x-api-key']).toBeUndefined()
   expect(body(requests[0])).toEqual({
-    model: 'gemma4:31b-cloud',
+    model: 'gemma4:31b',
     prompt: 'Make colorful waves',
   })
   expect(body(requests[0]).prompt).not.toContain('Current shader to edit:')

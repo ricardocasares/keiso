@@ -21,7 +21,7 @@ const source = 'fn fragment(uv: vec2f) -> vec4f { return vec4f(uv, 0.0, 1.0); }'
 const generate = () =>
   GenerateShader({
     prompt: 'Aurora',
-    model: 'gemma4:31b-cloud',
+    model: 'gemma4:31b',
     apiKey: Redacted.make(''),
     baseUrl: '',
     maybeSource: Option.none(),

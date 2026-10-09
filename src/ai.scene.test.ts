@@ -119,7 +119,7 @@ test('compact AI controls disable during generation, preview on hover, and apply
       FetchAiModels({ apiKey: Redacted.make(''), baseUrl: '' }),
     ),
     expect(text('Loading models…')).toExist(),
-    expect(modelPicker).toHaveValue('gemma4:31b-cloud'),
+    expect(modelPicker).toHaveValue('gemma4:31b'),
     expect(modelPicker).toBeDisabled(),
     expect(apiKey).toBeDisabled(),
     expect(endpoint).toBeDisabled(),
@@ -128,7 +128,7 @@ test('compact AI controls disable during generation, preview on hover, and apply
     Command.resolve(
       FetchAiModels,
       Message.CompletedFetchAiModels({
-        models: ['gemma4:31b-cloud', 'qwen3.5:397b'],
+        models: ['gemma4:31b', 'qwen3.5:397b'],
       }),
     ),
     change(modelPicker, 'qwen3.5:397b'),
@@ -228,7 +228,7 @@ test('form submission supports keyboard use and failed previews keep the prompt 
     Command.expectExact(
       GenerateShader({
         prompt: 'Aurora',
-        model: 'gemma4:31b-cloud',
+        model: 'gemma4:31b',
         apiKey: Redacted.make(''),
         baseUrl: '',
         maybeSource: Option.none(),
@@ -346,7 +346,7 @@ test('optional connection settings load provider models and are forwarded to gen
     click(settings),
     Command.resolve(
       FetchAiModels,
-      Message.CompletedFetchAiModels({ models: ['gemma4:31b-cloud'] }),
+      Message.CompletedFetchAiModels({ models: ['gemma4:31b'] }),
     ),
     expect(apiKey).toHaveAttr('type', 'password'),
     expect(apiKey).toHaveAttr('autocomplete', 'off'),
@@ -406,13 +406,13 @@ test('optional connection settings load provider models and are forwarded to gen
     ),
     Command.resolve(
       FetchAiModels,
-      Message.CompletedFetchAiModels({ models: ['gemma4:31b-cloud'] }),
+      Message.CompletedFetchAiModels({ models: ['gemma4:31b'] }),
     ),
     click(send),
     Command.expectExact(
       GenerateShader({
         prompt: 'Aurora',
-        model: 'gemma4:31b-cloud',
+        model: 'gemma4:31b',
         apiKey: Redacted.make(''),
         baseUrl: '',
         maybeSource: Option.none(),
@@ -455,7 +455,7 @@ test('model loading errors can be retried and an empty list retains the default 
     expect(
       text('No models returned. You can still use the selected model.'),
     ).toExist(),
-    expect(modelPicker).toHaveValue('gemma4:31b-cloud'),
+    expect(modelPicker).toHaveValue('gemma4:31b'),
     expect(modelPicker).toBeEnabled(),
     type(prompt, 'Aurora'),
     expect(send).toBeEnabled(),

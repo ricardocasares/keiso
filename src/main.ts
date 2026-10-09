@@ -81,7 +81,7 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
     exampleId: shaderExamples[0].id,
     exampleListbox: Listbox.init({ id: 'shader-examples' }),
     aiPrompt: '',
-    aiModel: 'gemma4:31b-cloud',
+    aiModel: 'gemma4:31b',
     aiApiKey: Redacted.make(''),
     aiBaseUrl: '',
     aiModels: AiModelsState.Idle(),
@@ -1389,8 +1389,7 @@ export const update = (model: Model, message: Message) =>
               aiModel: current =>
                 models.includes(current)
                   ? current
-                  : current === 'gemma4:31b-cloud' &&
-                      models.includes('gemma4:31b')
+                  : current === 'gemma4:31b' && models.includes('gemma4:31b')
                     ? 'gemma4:31b'
                     : (models[0] ?? current),
             })

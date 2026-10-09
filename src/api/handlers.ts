@@ -9,7 +9,7 @@ import { AiBaseUrl, AiProviderError, AiTimeoutError, Api } from './contract.ts'
 import { shaderSystemPrompt } from './shader-prompt.ts'
 
 const ollamaBaseUrl = 'https://ollama.com/v1'
-const defaultModel = 'gemma4:31b-cloud'
+const defaultModel = 'gemma4:31b'
 const normalizeBaseUrl = (value: URL) => value.href.replace(/\/+$/, '')
 const ModelsResponse = Schema.Struct({
   data: Schema.Array(Schema.Struct({ id: Schema.String })),
